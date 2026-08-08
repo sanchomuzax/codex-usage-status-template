@@ -1,0 +1,11 @@
+run.log
+run.log.tmp
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.refresh_state
+
+# Local, one-off written analysis (not tracked). The generated HTML
+# dashboards (dashboard-*.html) ARE tracked -- they are the published report.
+elemzes-*.md

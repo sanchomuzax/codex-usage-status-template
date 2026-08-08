@@ -1,0 +1,43 @@
+name: smoke
+
+# A minimal, dependency-free smoke test: the dashboard generator is pure Python
+# standard library, so this just proves it still builds the shipped sample into
+# a non-empty HTML report on a clean machine.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-sample-dashboard:
+    name: smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Install test dependency
+        run: python -m pip install pytest
+
+      - name: Run test suite
+        run: python -m pytest -q
+
+      - name: Check Git Bash runner syntax
+        shell: bash
+        run: bash -n codex-usage-check.sh
+
+      - name: Build the sample dashboard
+        run: python build_dashboard.py sample/2026-05.jsonl
+
+      - name: Assert the report was produced
+        run: python -c "from pathlib import Path; p = Path('sample/2026-05.html'); size = p.stat().st_size; assert size > 0; print(f'built {p} ({size} bytes)')"
