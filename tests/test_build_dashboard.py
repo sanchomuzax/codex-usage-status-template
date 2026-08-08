@@ -34,3 +34,24 @@ def test_generated_report_declares_utf8_before_unicode_text(tmp_path) -> None:
 
     assert html.startswith('<!doctype html>\n<meta charset="utf-8">')
     assert "Codex Quota — May 2026" in html
+
+
+def test_weekly_only_report_marks_session_unavailable() -> None:
+    module = load_builder()
+    rows = [{
+        "t": "2026-05-04T00:00:00Z",
+        "_dt": module.parse_ts("2026-05-04T00:00:00Z"),
+        "quota_status": "ok",
+        "session": None,
+        "weekly": 20,
+        "max": 20,
+        "tokens_7d": 700_000,
+    }]
+
+    payload = module.build_payload(rows, 2026, 5)
+    session_kpi = next(kpi for kpi in payload["kpis"] if kpi["key"] == "sessionPeak")
+
+    assert payload["meta"]["hasSession"] is False
+    assert session_kpi["value"] is None
+    assert session_kpi["note"] == {"type": "sessionUnavailable"}
+    assert "not exposed by Codex" in module.render(payload)

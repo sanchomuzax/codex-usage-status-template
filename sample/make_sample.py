@@ -7,9 +7,10 @@ their own data. It is entirely made up: a seeded simulation, not real usage.
 
     python3 sample/make_sample.py            # writes sample/2026-05.jsonl
 
-The shape (evening-weighted bursts, 5-hour session resets, a slow weekly climb,
-one saturation episode, one auth-error gap) mirrors what a real month looks
-like without reproducing any actual figures.
+The shape (evening-weighted bursts, weekly resets, and one auth-error gap)
+mirrors a plausible weekly-only Codex response without reproducing any actual
+figures. The optional 5-hour session window is deliberately ``null`` because
+Codex does not currently expose it; the monitor still supports it if it returns.
 """
 from __future__ import annotations
 
@@ -21,16 +22,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SEED = 20260504
-EXPECTED_SHA256 = "aa9a4e762308401dd59379de5b6a61ea85d3c6e1878642a726aeb7953946f2dd"
+EXPECTED_SHA256 = "509b96716e1a87baa6df1145b5ca672ef8c9d5f6ee7cd2d4cfe041ac3794db09"
 START = datetime(2026, 5, 4, 0, 0, tzinfo=timezone.utc)
 DAYS = 14
 STEP_MIN = 5
-SESSION_WIN_MIN = 300          # 5-hour session window
 WEEKLY_WIN_MIN = 7 * 1440      # 7-day weekly window
 
-# Engineered, clearly-labelled events (different times than the author's data):
-EXHAUST_DAY = 5                # a heavy evening that tops out the session window
-CRIT_DAY = 11                 # a lighter spike that only reaches "critical"
+# Engineered, clearly-labelled synthetic event:
 ERROR_START = START + timedelta(days=9, hours=12, minutes=20)
 ERROR_END = START + timedelta(days=9, hours=15, minutes=55)
 
@@ -47,9 +45,8 @@ def main() -> int:
     out = Path(__file__).with_name("2026-05.jsonl")
 
     n = DAYS * 24 * 60 // STEP_MIN
-    session_acc = 0.0
     weekly_acc = 0.0
-    prev_swin = prev_wwin = -1
+    prev_wwin = -1
     lines = []
 
     for i in range(n):
@@ -58,38 +55,22 @@ def main() -> int:
         day = (t - START).days
         hour = t.hour + t.minute / 60.0
 
-        swin = mins // SESSION_WIN_MIN
         wwin = mins // WEEKLY_WIN_MIN
-        if swin != prev_swin:
-            session_acc = 0.0
-            prev_swin = swin
         if wwin != prev_wwin:
             weekly_acc = 0.0
             prev_wwin = wwin
 
         # per-day energy so some days are busier than others
         day_factor = 0.55 + 0.4 * ((rng.random() + math.sin(day)) % 1.0)
-        if day == EXHAUST_DAY:
-            day_factor = 1.35
-        elif day == CRIT_DAY:
-            day_factor = 1.05
 
         weight = diurnal(hour)
         # is the agent doing anything this 5-minute slot?
         active = rng.random() < (0.08 + 0.60 * min(weight, 1.0))
         burst = weight * day_factor * (rng.uniform(1.4, 2.9) if active else 0.0)
 
-        # engineered evenings: EXHAUST_DAY tops out (100), CRIT_DAY only reaches
-        # the "critical" band. The 96 cap below keeps CRIT_DAY off "exhausted".
-        if active and 18 <= hour <= 21:
-            if day == EXHAUST_DAY:
-                burst *= 3.0
-            elif day == CRIT_DAY:
-                burst *= 1.9
-
-        cap = 96.0 if day == CRIT_DAY else 100.0
-        session_acc = min(cap, session_acc + burst)
-        weekly_acc = min(68.0, weekly_acc + burst * rng.uniform(0.055, 0.095))
+        # Weekly-only sample: enough movement to show a useful graph and a
+        # warning band, without inventing a currently absent session window.
+        weekly_acc = min(84.0, weekly_acc + burst * rng.uniform(0.11, 0.16))
 
         # token estimate: a separate, lower band than the author's (~0.8-1.15M)
         tokens = int(
@@ -103,14 +84,10 @@ def main() -> int:
             session = weekly = mx = None
             status = "error"
         else:
-            session = round(session_acc)
+            session = None
             weekly = round(weekly_acc)
-            mx = max(session, weekly)
-            if mx >= 100:
-                status = "exhausted"
-            elif mx >= 90:
-                status = "critical"
-            elif mx >= 75:
+            mx = weekly
+            if mx >= 75:
                 status = "warning"
             else:
                 status = "ok"

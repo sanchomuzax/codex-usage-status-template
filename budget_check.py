@@ -4,7 +4,7 @@
 Combines two questions an orchestrator needs answered before fanning out
 subagents:
 
-  1. Headroom -- how close is the 5-hour session window to its limit?
+  1. Headroom -- when exposed, how close is the optional 5-hour session window?
   2. Burn rate -- is the 7-day window being consumed faster than a steady pace
      would allow, so that it would run out before it resets?
 
@@ -231,6 +231,7 @@ def evaluate(limits, source="live", age=None):
         "verdict": verdict,
         "reasons": reasons,
         "session_percent_used": session,
+        "session_window_available": isinstance(session, (int, float)),
         "session_figure_stale": session_stale,
         "weekly_percent_used": weekly,
         "weekly_burn_rate": burn,
@@ -310,6 +311,8 @@ def main():
             bits.append(f"session {result['session_percent_used']}%")
         elif result.get("session_figure_stale"):
             bits.append("session unknown (stale)")
+        else:
+            bits.append("session — (not exposed)")
         if result.get("weekly_percent_used") is not None:
             bits.append(f"weekly {result['weekly_percent_used']}%")
         if result.get("weekly_burn_rate") is not None:

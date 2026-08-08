@@ -1,23 +1,12 @@
 {
   "timestamp_utc": "2026-01-01T12:00:00Z",
   "quota_status": "ok",
-  "session_percent_used": 42,
+  "session_percent_used": null,
   "weekly_percent_used": 30,
-  "max_percent_used": 42,
-  "session_resets_at": "2026-01-01T15:00:00Z",
+  "max_percent_used": 30,
+  "session_resets_at": null,
   "weekly_resets_at": "2026-01-05T12:00:00Z",
   "limits": [
-    {
-      "kind": "session",
-      "group": "codex",
-      "percent_used": 42,
-      "percent_remaining": 58,
-      "severity": null,
-      "resets_at": "2026-01-01T15:00:00Z",
-      "scope": "codex",
-      "is_active": true,
-      "window_duration_minutes": 300
-    },
     {
       "kind": "weekly_all",
       "group": "codex",
@@ -50,5 +39,5 @@
     "estimated_tokens_7d": 1000000,
     "estimated_tokens_7d_including_cache": 1300000
   },
-  "note": "DUMMY DATA - synthetic example output, not a real measurement."
+  "note": "DUMMY DATA - synthetic weekly-only example, not a real measurement. The optional 5-hour session fields are intentionally null because Codex does not currently expose that window; null is not zero."
 }

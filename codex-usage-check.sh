@@ -165,7 +165,9 @@ status = {
         "(the same account data used by the Codex TUI). estimated_tokens_7d is a separate "
         "approximation from local session logs on this machine only, and does "
         "not map linearly onto the percentages. When probe_was_live is false, "
-        "probe_status is derived from the quota figures rather than a live call."
+        "probe_status is derived from the quota figures rather than a live call. "
+        "The optional 5-hour session fields remain null when Codex does not expose "
+        "that window; null means unavailable, never zero."
     ),
 }
 
@@ -284,7 +286,11 @@ else
   summary="$("${PYTHON_BIN}" -c "
 import json
 d = json.load(open('status.json'))
-print(f\"{d['quota_status']} session={d.get('session_percent_used')}% weekly={d.get('weekly_percent_used')}%\")
+s = d.get('session_percent_used')
+w = d.get('weekly_percent_used')
+s_label = f'{s}%' if isinstance(s, (int, float)) else 'unavailable'
+w_label = f'{w}%' if isinstance(w, (int, float)) else 'unavailable'
+print(f\"{d['quota_status']} session={s_label} weekly={w_label}\")
 " 2>/dev/null || echo "update")"
 
   git add status.json history 2>/dev/null

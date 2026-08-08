@@ -70,6 +70,12 @@ pieces work.
 Authentication failures are returned as an explicit `quota_status: error`; the
 monitor never spends tokens to repair authentication.
 
+> **About the 5-hour session window:** Codex currently returns only the weekly
+> window for this account shape. Therefore `session_percent_used` and
+> `session_resets_at` are `null` and the dashboard shows the session as
+> unavailable — never as zero. The collector still understands the optional
+> 300-minute window, so it will appear automatically if OpenAI exposes it again.
+
 ## Spending strategy (`budget_check.py`)
 
 `budget_check.py` turns the quota into a `GO` / `CAUTION` / `STOP` verdict for
@@ -100,11 +106,11 @@ conservative stop is never mistaken for a near-empty account.
 
 | field | meaning |
 |---|---|
-| `session_percent_used` | 5-hour session window utilization (real) |
+| `session_percent_used` | optional 5-hour window; currently usually `null` because Codex does not expose it |
 | `weekly_percent_used` | 7-day window utilization (real) |
 | `max_percent_used` | the worst of all active limits |
 | `limits[]` | every limit window, including model-scoped ones |
-| `session_resets_at` / `weekly_resets_at` | when each window resets |
+| `session_resets_at` / `weekly_resets_at` | reset time for each exposed window; missing windows stay `null` |
 | `quota_status` | `ok` <75%, `warning` ≥75%, `critical` ≥90%, `exhausted` 100% |
 | `estimated_tokens_7d` | approximate token count from local logs |
 
@@ -180,14 +186,15 @@ here.
 
 ## Dashboard
 
-![Rendered dashboard preview — KPI tiles, session/weekly time series, hourly pattern, status mix, token trend, and saturation episodes](docs/dashboard-preview.png)
+![Dark-mode rendered dashboard preview — current weekly-only quota, unavailable 5-hour session, status mix, and token trend](docs/dashboard-preview.png)
 
 *Preview of [`sample/2026-05.html`](sample/2026-05.html) — two weeks of synthetic demo data, not real usage.*
 
 `build_dashboard.py` turns any monthly history file into a single, self-contained
-HTML dashboard — KPI tiles, a session/weekly time series with the warning /
-critical / exhausted thresholds, the hourly usage pattern, the status mix, the
-token trend, and auto-detected saturation and auth-error episodes. The page has an
+HTML dashboard — KPI tiles, the currently exposed quota windows with warning /
+critical / exhausted thresholds, the status mix, the token trend, and
+auto-detected saturation and auth-error episodes. Session-specific charts are
+shown only when Codex actually supplies the optional 5-hour window. The page has an
 **EN/HU language toggle** (English by default) and shows all times in the **local
 timezone of the machine that builds it** (via `$TZ`), so the report reads in your
 own local time — the stored history stays UTC.

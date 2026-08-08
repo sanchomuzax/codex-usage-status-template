@@ -18,7 +18,17 @@ másodperc alatt lefut:
 python3 ~/codex-usage-status/budget_check.py --brief
 ```
 
-Példa válasz: `CAUTION | live | session 76% | weekly 13% | burn 1.6x (…)`
+Példa válasz a jelenlegi, weekly-only Codex állapotban:
+`CAUTION | live | session — (not exposed) | weekly 31% | burn 1.6x (…)`
+
+### Az 5 órás session ablak jelenleg hiányozhat
+
+A Codex jelenleg sok fióknál csak a 7 napos weekly ablakot közli; az 5 órás
+session mező ilyenkor `null`. Ez **nem 0%**, és nem lekérdezési hiba. A
+`budget_check.py --brief` ezt `session — (not exposed)` formában jelzi, és a
+döntést a valóban elérhető weekly értékből és annak burn rate-jéből hozza meg.
+Ha OpenAI később ismét visszaadja a 300 perces ablakot, a monitor és ez a
+policy automatikusan figyelembe veszi.
 
 ### Mindig friss adatból dolgozz
 
@@ -40,9 +50,10 @@ A pillanatkép ötpercenként frissül a forrásgépen és felkerül a repóba, 
 `git pull` szinte mindig friss adatot hoz. Ha a `git pull` után is `CACHED`
 marad, az rendben van — a lényeg, hogy ne órákkal korábbi számból dolgozz.
 
-A parancs magától is véd: ha a pillanatkép 5 órás ablaka időközben lejárt, nem
-mondja meg a régi százalékot, hanem `session unknown (stale)` jelzést ad, és
-sosem enged GO-t ilyenkor. Ha a pillanatkép 90 percnél régebbi, a verdikt
+A parancs magától is véd: ha egy korábban ténylegesen közölt 5 órás ablak
+pillanatképe időközben lejárt, nem mondja meg a régi százalékot, hanem
+`session unknown (stale)` jelzést ad, és sosem enged GO-t ilyenkor. Ez más eset,
+mint a jelenlegi `session — (not exposed)`. Ha a pillanatkép 90 percnél régebbi, a verdikt
 `UNKNOWN` lesz. **Ne értelmezd a régi számot friss adatként** — ha bizonytalan
 vagy, kérdezd meg a felhasználót, mit mutat nála a `/usage`.
 

@@ -150,6 +150,7 @@ def build_payload(rows: list[dict], year: int, month_num: int) -> dict:
 
     ps = peak_row("session")
     pw = peak_row("weekly")
+    has_session = ps is not None
     toks = [r["tokens_7d"] for r in rows if r.get("tokens_7d") is not None]
     avg_tok = round(st.mean(toks)) if toks else 0
     ok_count = status.get("ok", 0)
@@ -164,11 +165,11 @@ def build_payload(rows: list[dict], year: int, month_num: int) -> dict:
          "note": {"type": "interval", "interval": interval, "days": span_days}},
         {"key": "okShare", "value": round(ok_count / n * 100, 1), "unit": "%",
          "note": {"type": "okRows", "n": ok_count}},
-        {"key": "sessionPeak", "value": ps.get("session") if ps else 0, "unit": "%",
-         "accent": "exh" if exh else "crit",
+        {"key": "sessionPeak", "value": ps.get("session") if ps else None, "unit": "%",
+         "accent": ("exh" if exh else "crit") if ps else "session",
          "note": {"type": "peakTime", "date": loc(ps["t"]).strftime("%m-%d"),
                   "time": loc(ps["t"]).strftime("%H:%M"),
-                  "status": ps.get("quota_status")} if ps else {"type": "none"}},
+                  "status": ps.get("quota_status")} if ps else {"type": "sessionUnavailable"}},
         {"key": "weeklyPeak", "value": pw.get("weekly") if pw else 0, "unit": "%",
          "accent": "weekly",
          "note": {"type": "weeklyTime", "date": loc(pw["t"]).strftime("%m-%d"),
@@ -183,6 +184,7 @@ def build_payload(rows: list[dict], year: int, month_num: int) -> dict:
 
     # --- saturation episodes (contiguous critical/exhausted runs) ---
     episodes = []
+    episode_key = "session" if has_session else "weekly"
     i = 0
     while i < len(rows):
         if rows[i].get("quota_status") in ("critical", "exhausted"):
@@ -190,20 +192,21 @@ def build_payload(rows: list[dict], year: int, month_num: int) -> dict:
             while j + 1 < len(rows) and rows[j + 1].get("quota_status") in ("critical", "exhausted"):
                 j += 1
             run = rows[i:j + 1]
-            peak = max(run, key=lambda r: r.get("session") or -1)
-            steps = [{"time": loc(r["t"]).strftime("%H:%M"), "val": r.get("session"),
+            peak = max(run, key=lambda r: r.get(episode_key) or -1)
+            steps = [{"time": loc(r["t"]).strftime("%H:%M"), "val": r.get(episode_key),
                       "cls": "hot" if r.get("quota_status") == "exhausted" else "warn"}
                      for r in run]
             if j + 1 < len(rows):
                 nxt = rows[j + 1]
                 steps.append({"time": loc(nxt["t"]).strftime("%H:%M"),
-                              "val": nxt.get("session"), "cls": "reset"})
+                              "val": nxt.get(episode_key), "cls": "reset"})
             episodes.append({
                 "date": loc(run[0]["t"]).strftime("%Y-%m-%d"),
                 "start": loc(run[0]["t"]).strftime("%H:%M"),
                 "end": loc(run[-1]["t"]).strftime("%H:%M"),
-                "peak": peak.get("session"),
+                "peak": peak.get(episode_key),
                 "weeklyAt": peak.get("weekly"),
+                "window": episode_key,
                 "hasExhausted": any(r.get("quota_status") == "exhausted" for r in run),
                 "steps": steps,
             })
@@ -245,6 +248,7 @@ def build_payload(rows: list[dict], year: int, month_num: int) -> dict:
             "lastFull": to_local(rows[-1]["_dt"]).strftime("%Y-%m-%d %H:%M:%S"),
             "spanDays": span_days, "interval": interval,
             "tzLabel": TZ_LABEL, "tzOffsetMin": TZ_OFFSET_MIN,
+            "hasSession": has_session,
         },
         "series": series,
         "hourly": hourly,
@@ -363,6 +367,7 @@ TEMPLATE = r"""<!doctype html>
   }
 
   *{box-sizing:border-box}
+  [hidden]{display:none!important}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
     line-height:1.5;-webkit-font-smoothing:antialiased;}
   .wrap{max-width:1120px;margin:0 auto;padding:32px 20px 64px;}
@@ -480,20 +485,20 @@ TEMPLATE = r"""<!doctype html>
         <p class="desc" id="c1-desc"></p>
       </div>
       <div class="legend">
-        <span><i style="background:var(--session)"></i>session (5h)</span>
+        <span id="session-legend"><i style="background:var(--session)"></i>session (5h)</span>
         <span><i style="background:var(--weekly)"></i>weekly (7d)</span>
       </div>
     </div>
     <div id="chart-main"></div>
   </section>
 
-  <div class="grid2">
-    <section class="card">
+  <div class="grid2" id="secondary-grid">
+    <section class="card" id="hourly-card">
       <h2 id="c2-title"></h2>
       <p class="desc" id="c2-desc"></p>
       <div id="chart-hourly"></div>
     </section>
-    <section class="card">
+    <section class="card" id="status-card">
       <h2 id="st-title"></h2>
       <p class="desc" id="st-desc"></p>
       <div class="statlist" id="statlist"></div>
@@ -526,6 +531,7 @@ TEMPLATE = r"""<!doctype html>
 <script>
 const DATA = JSON.parse(document.getElementById('data').textContent);
 const S=DATA.series, H=DATA.hourly, ST=DATA.status, M=DATA.meta, DAYS=DATA.days;
+const HAS_SESSION=M.hasSession;
 const cs=getComputedStyle(document.documentElement);
 const c=n=>cs.getPropertyValue(n).trim();
 const NS='http://www.w3.org/2000/svg';
@@ -535,6 +541,12 @@ const showTip=(html,x,y)=>{tip.innerHTML=html;tip.style.left=x+'px';tip.style.to
 const hideTip=()=>{tip.style.opacity=0;};
 const totalMin=S[S.length-1].m;
 const stColor={ok:'--ok',warning:'--warn',critical:'--crit',exhausted:'--exh',error:'--err'};
+
+if(!HAS_SESSION){
+  document.getElementById('session-legend').hidden=true;
+  document.getElementById('hourly-card').hidden=true;
+  document.getElementById('secondary-grid').style.gridTemplateColumns='1fr';
+}
 
 let LANG='en';
 const locale=()=>LANG==='hu'?'hu-HU':'en-US';
@@ -560,19 +572,24 @@ const I18N={
   en:{
     eyebrow:"Codex subscription quota · telemetry",
     title:()=>`Quota utilization — ${MONTHS.en[M.monthNum]} ${M.year}`,
-    sub:"Sampled every five minutes. The session (5-hour) and weekly (7-day) windows share a 0–100% scale; the token estimate and the time-of-day pattern have their own panels. Times shown in "+TZ+".",
+    sub:()=>HAS_SESSION
+      ? "Sampled every five minutes. Codex exposed both the optional 5-hour session and 7-day weekly windows. Times shown in "+TZ+"."
+      : "Sampled every five minutes. Codex currently exposes only the 7-day weekly window; the optional 5-hour session window is unavailable, not zero. Times shown in "+TZ+".",
     period:"Period",
-    kpiLabel:{samples:"Samples",okShare:"“ok” share",sessionPeak:"Session peak",weeklyPeak:"Weekly peak",saturation:"Saturation",tokensAvg:"tokens_7d avg"},
+    kpiLabel:{samples:"Samples",okShare:"“ok” share",sessionPeak:"5h session",weeklyPeak:"Weekly peak",saturation:"Saturation",tokensAvg:"tokens_7d avg"},
     kpiNote(nt){switch(nt.type){
       case"interval":return `every ~${nt.interval} min, over ${nt.days} days`;
       case"okRows":return `${nf(nt.n)} rows comfortably within budget`;
       case"peakTime":return `${nt.date} ${nt.time} · ${nt.status}`;
       case"weeklyTime":return `${nt.date} ${nt.time} · weekly window`;
+      case"sessionUnavailable":return "not exposed by Codex";
       case"sat":return `${nt.exh}× exhausted · ${nt.crit}× critical`;
       case"tokRange":return `${nf2(nt.lo)}–${nf2(nt.hi)}M range`;
       case"noData":return "no data";default:return "—";}},
-    c1t:"Session & weekly utilization over time",
-    c1d:"Shared percentage scale. Dashed lines: warning 75%, critical 90%, exhausted 100%.",
+    c1t:()=>HAS_SESSION?"Session & weekly utilization over time":"Weekly utilization over time",
+    c1d:()=>HAS_SESSION
+      ? "Shared percentage scale. Dashed lines: warning 75%, critical 90%, exhausted 100%."
+      : "The optional 5-hour session series is absent because Codex did not expose it. Dashed lines: warning 75%, critical 90%, exhausted 100%.",
     c2t:"Time-of-day pattern",
     c2d:"Average session% per hour.",
     peak:(lo,hi)=>`${lo}–${hi} peak`,
@@ -582,10 +599,14 @@ const I18N={
     tokd:"tokens_7d from local logs — the rolling 7-day window sum.",
     noTok:"No tokens_7d data.",
     epTitle:e=>`Saturation episode — ${e.date}, ${e.start}–${e.end} ${TZ}`,
-    epBody:e=>`Session-window peak ${e.peak}%, weekly at ${e.weeklyAt==null?"n/a":e.weeklyAt+"%"} — typically it is the short 5-hour window, not the weekly budget, that fills up in an intense session.`,
+    epBody:e=>e.window==="session"
+      ? `Session-window peak ${e.peak}%, weekly at ${e.weeklyAt==null?"n/a":e.weeklyAt+"%"}.`
+      : `Weekly-window peak ${e.peak}%; the optional 5-hour session window was not exposed by Codex.`,
     reset:"reset",
     goodTitle:"No saturation",
-    goodBody:"No sample reached the critical (90%) level in this period — the budget stayed comfortable.",
+    goodBody:()=>HAS_SESSION
+      ? "No reported window reached the critical (90%) level in this period — the budget stayed comfortable."
+      : "The weekly window stayed below critical (90%). The optional 5-hour session window was not exposed by Codex.",
     errTitle:b=>`Auth outage — ${b.date}, ${b.start}–${b.end} ${TZ}`,
     errBody:b=>`${b.count} consecutive error rows for ~${b.hours>=1?nf1(b.hours)+" h":Math.round(b.hours*60)+" min"}.`+
       (b.logAlive?" tokens_7d kept updating, so the local log was alive — only the Codex app-server account query failed (usually a logout on the machine). Configuration, not quota.":""),
@@ -596,19 +617,24 @@ const I18N={
   hu:{
     eyebrow:"Codex subscription quota · telemetria",
     title:()=>`Kvóta-kihasználtság — ${M.year}. ${MONTHS.hu[M.monthNum]}`,
-    sub:"Ötpercenkénti mintavétel. A session (5 órás) és weekly (7 napos) ablak közös 0–100% skálán; a token-becslés és a napszaki minta külön panelen. Az idők "+TZ+" szerint.",
+    sub:()=>HAS_SESSION
+      ? "Ötpercenkénti mintavétel. A Codex az opcionális 5 órás session és a 7 napos weekly ablakot is közölte. Az idők "+TZ+" szerint."
+      : "Ötpercenkénti mintavétel. A Codex jelenleg csak a 7 napos weekly ablakot közli; az opcionális 5 órás session nem elérhető, nem nulla. Az idők "+TZ+" szerint.",
     period:"Időszak",
-    kpiLabel:{samples:"Mintavétel",okShare:"„ok” arány",sessionPeak:"Session csúcs",weeklyPeak:"Weekly csúcs",saturation:"Telítődés",tokensAvg:"tokens_7d átlag"},
+    kpiLabel:{samples:"Mintavétel",okShare:"„ok” arány",sessionPeak:"5 órás session",weeklyPeak:"Weekly csúcs",saturation:"Telítődés",tokensAvg:"tokens_7d átlag"},
     kpiNote(nt){switch(nt.type){
       case"interval":return `~${nt.interval} percenként, ${nt.days} napon át`;
       case"okRows":return `${nf(nt.n)} sor bőven kereten belül`;
       case"peakTime":return `${nt.date} ${nt.time} · ${nt.status}`;
       case"weeklyTime":return `${nt.date} ${nt.time} · heti ablak`;
+      case"sessionUnavailable":return "a Codex nem közli";
       case"sat":return `${nt.exh}× exhausted · ${nt.crit}× critical`;
       case"tokRange":return `${nf2(nt.lo)}–${nf2(nt.hi)}M tartomány`;
       case"noData":return "nincs adat";default:return "—";}},
-    c1t:"Session & weekly kihasználtság az időben",
-    c1d:"Közös százalékos skála. Szaggatott vonalak: warning 75%, critical 90%, exhausted 100%.",
+    c1t:()=>HAS_SESSION?"Session és weekly kihasználtság az időben":"Weekly kihasználtság az időben",
+    c1d:()=>HAS_SESSION
+      ? "Közös százalékos skála. Szaggatott vonalak: warning 75%, critical 90%, exhausted 100%."
+      : "Az opcionális 5 órás session adatsor hiányzik, mert a Codex nem közölte. Szaggatott vonalak: warning 75%, critical 90%, exhausted 100%.",
     c2t:"Napszaki minta",
     c2d:"Átlagos session% óránként.",
     peak:(lo,hi)=>`${lo}–${hi} csúcs`,
@@ -618,10 +644,14 @@ const I18N={
     tokd:"tokens_7d a helyi logokból — a gördülő 7 napos ablak összege.",
     noTok:"Nincs tokens_7d adat.",
     epTitle:e=>`Telítődési epizód — ${e.date}, ${e.start}–${e.end} ${TZ}`,
-    epBody:e=>`A session-ablak csúcsa ${e.peak}%, a heti keret ekkor ${e.weeklyAt==null?"n/a":e.weeklyAt+"%"} — jellemzően nem a heti, hanem a rövid 5 órás ablak telik be egy intenzív munkamenetben.`,
+    epBody:e=>e.window==="session"
+      ? `A session-ablak csúcsa ${e.peak}%, a heti keret ekkor ${e.weeklyAt==null?"n/a":e.weeklyAt+"%"}.`
+      : `A weekly ablak csúcsa ${e.peak}%; az opcionális 5 órás session ablakot a Codex nem közölte.`,
     reset:"reset",
     goodTitle:"Nincs telítődés",
-    goodBody:"Az időszakban egyetlen mintavétel sem érte el a critical (90%) szintet — a keret végig kényelmes maradt.",
+    goodBody:()=>HAS_SESSION
+      ? "Az időszakban egyik közölt ablak sem érte el a critical (90%) szintet — a keret végig kényelmes maradt."
+      : "A weekly ablak a critical (90%) szint alatt maradt. Az opcionális 5 órás session ablakot a Codex nem közölte.",
     errTitle:b=>`Auth-kiesés — ${b.date}, ${b.start}–${b.end} ${TZ}`,
     errBody:b=>`${b.count} egymást követő error sor ~${b.hours>=1?nf1(b.hours)+" órán át":Math.round(b.hours*60)+" percen át"}.`+
       (b.logAlive?" A tokens_7d közben frissült, tehát a helyi log élt — csak a Codex app-server fióklekérdezése bukott (jellemzően kijelentkezés a gépen). Konfigurációs, nem kvóta-probléma.":""),
@@ -638,11 +668,11 @@ function renderText(){
   document.documentElement.lang=LANG;
   document.getElementById('eyebrow').textContent=t.eyebrow;
   document.getElementById('title').textContent=t.title();
-  document.getElementById('sub').textContent=t.sub;
+  document.getElementById('sub').textContent=t.sub();
   document.getElementById('range').innerHTML=
     `<span class="lbl">${t.period}</span><b>${M.firstDate}</b> → <b>${M.lastDate}</b>`;
-  document.getElementById('c1-title').textContent=t.c1t;
-  document.getElementById('c1-desc').textContent=t.c1d;
+  document.getElementById('c1-title').textContent=t.c1t();
+  document.getElementById('c1-desc').textContent=t.c1d();
   document.getElementById('c2-title').textContent=t.c2t;
   document.getElementById('c2-desc').textContent=t.c2d;
   document.getElementById('st-title').textContent=t.stt;
@@ -660,10 +690,11 @@ function renderKpis(){
   const t=T();
   document.getElementById('kpis').innerHTML=DATA.kpis.map(k=>{
     const rail=k.accent?('--'+k.accent):(k.key==='okShare'?'--ok':'--session');
-    const val=(k.unit==='%'||k.key==='saturation'||k.key==='samples')?nf(k.value):nf2(k.value);
+    const missing=k.value==null;
+    const val=missing?'—':((k.unit==='%'||k.key==='saturation'||k.key==='samples')?nf(k.value):nf2(k.value));
     return `<div class="kpi"><span class="rail" style="background:var(${rail})"></span>
       <div class="k-lbl">${t.kpiLabel[k.key]}</div>
-      <div class="k-val">${val}${k.unit?`<small>${k.unit}</small>`:''}</div>
+      <div class="k-val">${val}${!missing&&k.unit?`<small>${k.unit}</small>`:''}</div>
       <div class="k-note">${t.kpiNote(k.note)}</div></div>`;
   }).join('');
 }
@@ -689,7 +720,7 @@ function renderCallouts(){
     });
   }else{
     html+=`<div class="callout good"><h3>✅ ${t.goodTitle} <span class="pill" style="color:var(--ok)">ok</span></h3>
-      <p>${t.goodBody}</p></div>`;
+      <p>${t.goodBody()}</p></div>`;
   }
   DATA.errorBlocks.forEach(b=>{
     html+=`<div class="callout err"><h3>⚠ ${t.errTitle(b)} <span class="pill" style="color:var(--err)">error ×${b.count}</span></h3>
@@ -711,7 +742,7 @@ function dayGrid(svg,x,mT,ih){
 (function(){
   const W=1040,Hh=320,mL=34,mR=14,mT=14,mB=26,iw=W-mL-mR,ih=Hh-mT-mB;
   const x=m=>mL+m/totalMin*iw, y=v=>mT+(100-v)/100*ih;
-  const svg=el('svg',{viewBox:`0 0 ${W} ${Hh}`,role:'img','aria-label':'Session & weekly'});
+  const svg=el('svg',{viewBox:`0 0 ${W} ${Hh}`,role:'img','aria-label':HAS_SESSION?'Session and weekly':'Weekly quota'});
   const g=el('g',{class:'axis'});
   [0,25,50,75,100].forEach(v=>{g.appendChild(el('line',{x1:mL,y1:y(v),x2:W-mR,y2:y(v)}));
     const t=el('text',{x:mL-6,y:y(v)+3,'text-anchor':'end'});t.textContent=v;g.appendChild(t);});
@@ -754,6 +785,7 @@ function dayGrid(svg,x,mT,ih){
 
 // ============ HOURLY BARS ============
 (function(){
+  if(!HAS_SESSION)return;
   const W=520,Hh=250,mL=30,mR=8,mT=12,mB=30,iw=W-mL-mR,ih=Hh-mT-mB;
   const maxv=Math.max(1,...H.map(d=>d.avg)),bw=iw/24,y=v=>mT+(1-v/maxv)*ih;
   const band=DATA.peakBand;

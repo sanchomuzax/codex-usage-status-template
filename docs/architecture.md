@@ -15,8 +15,11 @@ read credential files or call an internal remote endpoint directly: Codex owns
 authentication and token refresh. The JSON-RPC request contains no
 `turn/start`, so collecting quota does not invoke a model or consume tokens.
 
-Codex may expose only the weekly window at a given time. Missing windows remain
-`null`; the monitor never invents a zero. Recent model responses also carry a
+Codex currently exposes only the weekly window in the observed account shape;
+the 300-minute/5-hour session window is absent. Missing windows remain `null`
+and are labelled unavailable in the dashboard and orchestrator output — the
+monitor never invents a zero. The normalizer still supports the optional
+300-minute window so no code change is required if it returns. Recent model responses also carry a
 server-side `rate_limits` snapshot in local rollout logs. If the account method
 temporarily returns a lower value for the same duration and reset window, the
 normalizer retains the higher observed utilization. The app-server result
