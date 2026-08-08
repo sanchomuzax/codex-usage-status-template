@@ -186,7 +186,7 @@ here.
 
 ## Dashboard
 
-![Dark-mode rendered dashboard preview — current weekly-only quota, unavailable 5-hour session, status mix, and token trend](docs/dashboard-preview.png)
+![Dark-mode rendered dashboard preview — current weekly-only quota, unavailable 5-hour session, status mix, and token trend](docs/dashboard-preview-v2-weekly-dark.png)
 
 *Preview of [`sample/2026-05.html`](sample/2026-05.html) — two weeks of synthetic demo data, not real usage.*
 
