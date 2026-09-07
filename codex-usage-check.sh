@@ -297,7 +297,12 @@ print(f\"{d['quota_status']} session={s_label} weekly={w_label}\")
   [[ -f "${month_dashboard}" ]] && git add "${month_dashboard}" 2>/dev/null
   if [[ -z "$(git diff --cached --name-only)" ]]; then
     log "nothing staged despite decision: ${reason}"
-  elif git commit -q -m "chore: usage status $(date -u +%Y-%m-%dT%H:%MZ) (${summary})" -m "${reason}"; then
+  # [skip ci]: ez a commit ADAT, nem kod — nem kell hozza CI. A GitHub
+  # jobonkent EGY TELJES PERCRE kerekit felfele, a windows-lab pedig ketszeresen
+  # szamit, tehat egy ~20 masodperces futas ~3 szamlazott percbe kerult; ez a
+  # szkript pedig otpercenkent pushol. Merve 2026-09-07: 682 szeptemberi futas,
+  # ~2000 szamlazott perc — a havi 2000-es keret 90%-a EBBOL ment el.
+  elif git commit -q -m "chore: usage status $(date -u +%Y-%m-%dT%H:%MZ) (${summary}) [skip ci]" -m "${reason}"; then
     if git push -q origin HEAD 2>>"${LOG_FILE}"; then
       log "pushed: ${summary} [${reason}]"
     else

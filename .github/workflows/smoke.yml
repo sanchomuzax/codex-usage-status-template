@@ -4,8 +4,17 @@ name: smoke
 # standard library, so this just proves it still builds the shipped sample into
 # a non-empty HTML report on a clean machine.
 
+# ⚠️ NE indítsd minden pushra: ezt a repót egy ötpercenkénti cron frissíti, és
+# minden adat-commit külön futást indítana. A GitHub jobonként egy teljes percre
+# kerekít felfelé — mérve 2026-09-07: 682 szeptemberi futás, ~2000 számlázott
+# perc, a havi keret 90%-a. Az adat-commitok ezért `[skip ci]`-t kapnak, itt
+# pedig csak a KÓD változása és a kézi indítás számít.
 on:
   push:
+    paths:
+      - "**.py"
+      - ".github/workflows/**"
+      - "*.sh"
   pull_request:
   workflow_dispatch:
 
@@ -15,9 +24,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # A windows-láb KIESETT (2026-09-07): a füstpróba tiszta Python
+        # szabványkönyvtár, platformfüggetlen — a Windows viszont KÉTSZERESEN
+        # számít a percekben. Ha egyszer platformfüggő kód kerül ide, tedd
+        # vissza, de akkor is csak PR-re.
         os:
           - ubuntu-latest
-          - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
