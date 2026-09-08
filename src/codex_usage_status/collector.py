@@ -34,7 +34,7 @@ def fetch_rate_limits(
                 "clientInfo": {
                     "name": "codex-usage-status",
                     "title": "Codex Usage Status",
-                    "version": "0.1.0",
+                    "version": "0.1.1",
                 }
             },
         },
