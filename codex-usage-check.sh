@@ -144,6 +144,10 @@ status = {
     "max_percent_used": worst,
     "session_resets_at": limits.get("session_resets_at"),
     "weekly_resets_at": limits.get("weekly_resets_at"),
+    # Which limit group each headline figure came from. Published so a renamed
+    # or re-scoped group is visible here instead of quietly redirecting them.
+    "session_group": limits.get("session_group"),
+    "weekly_group": limits.get("weekly_group"),
     "limits": limits.get("limits"),
     "subscription_type": limits.get("subscription_type"),
     "extra_usage": limits.get("extra_usage"),

@@ -79,6 +79,26 @@ def latest_session_rate_limits():
     return None
 
 
+# The app-server serialises ``rateLimitsByLimitId`` from an unordered map, so
+# the same account state arrives with its groups in a different order on nearly
+# every call. This tool reports Codex quota, so the Codex group owns the
+# headline figures; other groups (``base_model_inference``) still ship inside
+# ``limits``, but must never take over ``weekly_percent_used`` just because the
+# map happened to yield them first -- an unused group reads 0%, which looks
+# exactly like a fresh window.
+PRIMARY_GROUP = "codex"
+
+
+def group_sort_key(row):
+    """Rank a limit row. Total and type-safe: a window duration the server sends
+    as a string (or omits) must not make sorting raise -- that would take the
+    whole reading down, which is worse than any ordering question."""
+    group = row.get("group") or ""
+    duration = row.get("window_duration_minutes")
+    numeric = duration if isinstance(duration, (int, float)) else 0
+    return (0 if group == PRIMARY_GROUP else 1, group, numeric, str(duration))
+
+
 def normalize(payload, session_snapshot=None):
     snapshots = payload.get("rateLimitsByLimitId")
     if not isinstance(snapshots, dict) or not snapshots:
@@ -87,16 +107,26 @@ def normalize(payload, session_snapshot=None):
 
     candidates = []
     subscription = None
-    reached = None
-    for limit_id, snapshot in snapshots.items():
+    # Ranked, not raw map order: ``planType`` is taken from the first group that
+    # carries one, so the Codex group has to be asked first for it too.
+    ranked = sorted(snapshots.items(), key=lambda item: (0 if item[0] == PRIMARY_GROUP else 1, item[0]))
+    reached_by_group = {}
+    for limit_id, snapshot in ranked:
         if not isinstance(snapshot, dict):
             continue
         subscription = subscription or snapshot.get("planType")
-        reached = reached or snapshot.get("rateLimitReachedType")
+        reached_by_group[limit_id] = snapshot.get("rateLimitReachedType")
         for slot in ("primary", "secondary"):
             row = normalize_window(snapshot.get(slot), limit_id=limit_id, slot=slot)
             if row:
                 candidates.append(row)
+
+    # "Which limit did I hit?" is a headline answer too: report the Codex group's
+    # own verdict when that group is present, rather than an unrelated group's.
+    if PRIMARY_GROUP in reached_by_group:
+        reached = reached_by_group[PRIMARY_GROUP]
+    else:
+        reached = next((value for value in reached_by_group.values() if value), None)
 
     # Model responses carry a fresh server-side rate-limit snapshot. The
     # account endpoint can temporarily return 0% for the same reset window;
@@ -129,21 +159,40 @@ def normalize(payload, session_snapshot=None):
             merged[key] = row
         elif not same_reset and (row.get("resets_at") or "") > (previous.get("resets_at") or ""):
             merged[key] = row
-    limits = list(merged.values())
+    limits = sorted(merged.values(), key=group_sort_key)
+
+    # Once the Codex group is present, the headline figures come from it and
+    # from nowhere else. Another group's window measures a different resource,
+    # and an unused one reads 0% -- indistinguishable from a fresh window. A
+    # missing figure is reported as null; the monitor never invents a zero.
+    primary_rows = [row for row in limits if row["group"] == PRIMARY_GROUP]
+    headline_rows = primary_rows or limits
+
+    def first_row(kind):
+        return next((row for row in headline_rows if row["kind"] == kind), None)
 
     def first(kind, field):
-        return next((row.get(field) for row in limits if row["kind"] == kind), None)
+        row = first_row(kind)
+        return row.get(field) if row else None
 
+    session_row, weekly_row = first_row("session"), first_row("weekly_all")
     percents = [row["percent_used"] for row in limits]
     reset_summary = payload.get("rateLimitResetCredits")
     return {
         "subscription_type": subscription,
         "limits": limits,
+        # Deliberately across every group: the worst window drives quota_status,
+        # even when it belongs to a group the headline fields do not report.
         "max_percent_used": max(percents) if percents else None,
         "session_percent_used": first("session", "percent_used"),
         "weekly_percent_used": first("weekly_all", "percent_used"),
         "session_resets_at": first("session", "resets_at"),
         "weekly_resets_at": first("weekly_all", "resets_at"),
+        # W2 provenance: which group each headline figure came from, so a
+        # renamed limit id shows up in the published file instead of silently
+        # redirecting the numbers the way the September ordering bug did.
+        "session_group": session_row["group"] if session_row else None,
+        "weekly_group": weekly_row["group"] if weekly_row else None,
         "rate_limit_reached_type": reached,
         "available_reset_credits": (
             reset_summary.get("availableCount") if isinstance(reset_summary, dict) else None

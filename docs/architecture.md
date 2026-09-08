@@ -15,11 +15,20 @@ read credential files or call an internal remote endpoint directly: Codex owns
 authentication and token refresh. The JSON-RPC request contains no
 `turn/start`, so collecting quota does not invoke a model or consume tokens.
 
-Codex currently exposes only the weekly window in the observed account shape;
-the 300-minute/5-hour session window is absent. Missing windows remain `null`
-and are labelled unavailable in the dashboard and orchestrator output — the
-monitor never invents a zero. The normalizer still supports the optional
-300-minute window so no code change is required if it returns. Recent model responses also carry a
+Missing windows remain `null` and are labelled unavailable in the dashboard and
+orchestrator output — the monitor never invents a zero. Both the weekly and the
+optional 300-minute/5-hour session window are supported, and either may be
+absent from a given account shape.
+
+The account method reports several limit *groups* in `rateLimitsByLimitId`, and
+serialises them from an unordered map, so their order changes between calls. The
+`codex` group owns every headline field (`session_*`, `weekly_*`,
+`rate_limit_reached_type`); other groups — `base_model_inference`, for one —
+appear in `limits` and still drive `max_percent_used`, but never supply a
+headline figure while the `codex` group is present, because an unused group
+reports 0% and that is indistinguishable from a fresh window. `session_group`
+and `weekly_group` record which group each figure came from. Rows in `limits`
+are sorted, so the published file does not churn with the map order. Recent model responses also carry a
 server-side `rate_limits` snapshot in local rollout logs. If the account method
 temporarily returns a lower value for the same duration and reset window, the
 normalizer retains the higher observed utilization. The app-server result
