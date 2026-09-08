@@ -88,6 +88,17 @@ def build_payload(rows: list[dict], year: int, month_num: int) -> dict:
     def minute(dt: datetime) -> int:
         return round((dt - t0).total_seconds() / 60)
 
+    # An account balancer can re-point the CLI's auth between two subscriptions.
+    # Their windows are independent, so joining the samples across a switch
+    # draws a cliff that is not a change in consumption: mark the switch and let
+    # the chart break the line there, the same way it breaks on a missing value.
+    accounts = [r.get("account") for r in rows]
+    switched = [
+        1 if index and accounts[index] and accounts[index - 1]
+        and accounts[index] != accounts[index - 1] else 0
+        for index in range(len(rows))
+    ]
+
     series = [{
         "t": r["t"],
         "m": minute(r["_dt"]),
@@ -96,7 +107,9 @@ def build_payload(rows: list[dict], year: int, month_num: int) -> dict:
         "x": r.get("max"),
         "k": r.get("tokens_7d"),
         "q": r.get("quota_status"),
-    } for r in rows]
+        "a": accounts[index],
+        "b": switched[index],
+    } for index, r in enumerate(rows)]
 
     # --- status counts ---
     status: dict[str, int] = {}
@@ -612,7 +625,7 @@ const I18N={
       (b.logAlive?" tokens_7d kept updating, so the local log was alive — only the Codex app-server account query failed (usually a logout on the machine). Configuration, not quota.":""),
     footSrc:n=>`Source: history · ${nf(n)} rows`,
     footNote:"generated report — committed to the repo",
-    tipSession:"session",tipWeekly:"weekly",tipAvg:"avg session",tipSamples:n=>`${n} samples`,peakTag:"peak"
+    tipSession:"session",tipWeekly:"weekly",tipAccount:"account",tipAvg:"avg session",tipSamples:n=>`${n} samples`,peakTag:"peak"
   },
   hu:{
     eyebrow:"Codex subscription quota · telemetria",
@@ -657,7 +670,7 @@ const I18N={
       (b.logAlive?" A tokens_7d közben frissült, tehát a helyi log élt — csak a Codex app-server fióklekérdezése bukott (jellemzően kijelentkezés a gépen). Konfigurációs, nem kvóta-probléma.":""),
     footSrc:n=>`Forrás: history · ${nf(n)} sor`,
     footNote:"generált riport — a repóba commitolva",
-    tipSession:"session",tipWeekly:"weekly",tipAvg:"átlag session",tipSamples:n=>`${n} mintavétel`,peakTag:"csúcs"
+    tipSession:"session",tipWeekly:"weekly",tipAccount:"fiók",tipAvg:"átlag session",tipSamples:n=>`${n} mintavétel`,peakTag:"csúcs"
   }
 };
 const T=()=>I18N[LANG];
@@ -754,8 +767,10 @@ function dayGrid(svg,x,mT,ih){
     const t=el('text',{x:W-mR,y:y(v)-4,'text-anchor':'end',fill:c(col)});t.textContent=lb+' '+v+'%';thr.appendChild(t);});
   svg.appendChild(thr);
   const linePath=key=>{let d='',open=false;S.forEach(p=>{const v=p[key];
+    if(p.b)open=false;
     if(v==null){open=false;return;}const X=x(p.m),Y=y(v);d+=(open?'L':'M')+X.toFixed(1)+' '+Y.toFixed(1)+' ';open=true;});return d;};
   const areaPath=key=>{const segs=[];let seg='',open=false,lastX=0;S.forEach(p=>{const v=p[key];
+    if(p.b&&open){segs.push(seg+`L ${lastX} ${y(0)} Z`);seg='';open=false;}
     if(v==null){if(open){segs.push(seg+`L ${lastX} ${y(0)} Z`);seg='';open=false;}return;}
     const X=x(p.m),Y=y(v);if(!open){seg=`M ${X} ${y(0)} L ${X} ${Y} `;open=true;}else seg+=`L ${X} ${Y} `;lastX=X;});
     if(open)segs.push(seg+`L ${lastX} ${y(0)} Z`);return segs.join(' ');};
@@ -777,6 +792,7 @@ function dayGrid(svg,x,mT,ih){
     showTip(`<div class="tt">${fmtLocal(p.t)}</div>`+
       (p.s!=null?`<div class="row"><span class="nm"><i style="background:${c('--session')}"></i>${t.tipSession}</span><span class="vl">${p.s}%</span></div>`:'')+
       (p.w!=null?`<div class="row"><span class="nm"><i style="background:${c('--weekly')}"></i>${t.tipWeekly}</span><span class="vl">${p.w}%</span></div>`:'')+
+      (p.a?`<div class="row"><span class="nm">${t.tipAccount}</span><span class="vl">${p.a}</span></div>`:'')+
       `<div class="st" style="color:${c(stColor[p.q]||'--err')}">● ${p.q}${p.k!=null?' · '+nf2(p.k/1e6)+'M tok':''}</div>`,
       ev.clientX,ev.clientY);});
   over.addEventListener('mouseleave',()=>{hideTip();cross.setAttribute('opacity',0);dS.setAttribute('opacity',0);dW.setAttribute('opacity',0);});

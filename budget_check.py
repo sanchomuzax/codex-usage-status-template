@@ -27,6 +27,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(REPO_DIR / "src"))
+
+from codex_usage_status.accounts import active_account  # noqa: E402
 
 # --- spending strategy ------------------------------------------------------
 # The thresholds below decide how aggressively agents may spend. They are tunable
@@ -181,6 +184,30 @@ def evaluate(limits, source="live", age=None):
     session_stale = source == "cached" and session_window_expired(limits)
     if session_stale:
         session = None
+
+    # The account balancer re-points the CLI's auth between two subscriptions.
+    # A cached reading taken before a switch describes the other account's
+    # windows entirely -- both figures, both reset times. A figure that belongs
+    # to a different subscription is worse than no figure, so report neither.
+    reading_account = limits.get("account")
+    current_account = active_account()
+    if source == "cached" and reading_account and current_account and reading_account != current_account:
+        return {
+            "verdict": "UNKNOWN",
+            "reasons": [
+                f"cached reading is from account '{reading_account}' but "
+                f"'{current_account}' is active now -- those are separate "
+                "subscriptions with separate windows; ask for a fresh reading"
+            ],
+            "session_percent_used": None,
+            "session_window_available": False,
+            "session_figure_stale": True,
+            "weekly_percent_used": None,
+            "weekly_burn_rate": None,
+            "weekly_projected_at_reset": None,
+            "session_resets_in_minutes": None,
+            "weekly_resets_in_minutes": None,
+        }
 
     fraction = elapsed_fraction(limits.get("weekly_resets_at"), WEEKLY_WINDOW)
     burn = None

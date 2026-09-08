@@ -148,6 +148,9 @@ status = {
     # or re-scoped group is visible here instead of quietly redirecting them.
     "session_group": limits.get("session_group"),
     "weekly_group": limits.get("weekly_group"),
+    # Which subscription these figures describe. An account balancer can
+    # re-point the CLI's auth, and each account has its own independent windows.
+    "account": limits.get("account"),
     "limits": limits.get("limits"),
     "subscription_type": limits.get("subscription_type"),
     "extra_usage": limits.get("extra_usage"),
@@ -224,6 +227,10 @@ else:
         reasons.append("quota error state changed")
     if previous.get("probe_status") != status["probe_status"]:
         reasons.append(f"probe {previous.get('probe_status')} -> {status['probe_status']}")
+    # A switch changes which subscription the numbers describe. That is a
+    # meaningful change even when the percentages happen to look the same.
+    if previous.get("account") != status["account"]:
+        reasons.append(f"account {previous.get('account')} -> {status['account']}")
 
     # Heartbeat: never let the published file go stale for too long.
     try:
@@ -254,6 +261,7 @@ sample = {
     "weekly": status["weekly_percent_used"],
     "max": status["max_percent_used"],
     "tokens_7d": status["estimated_tokens_7d"],
+    "account": status["account"],
 }
 try:
     with open(history_path, "a", encoding="utf-8") as handle:

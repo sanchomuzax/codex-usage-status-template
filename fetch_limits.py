@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent
 SESSION_ROOT = Path.home() / ".codex" / "sessions"
 sys.path.insert(0, str(ROOT / "src"))
 
+from codex_usage_status.accounts import active_account
 from codex_usage_status.collector import AppServerError, fetch_rate_limits
 
 
@@ -202,7 +203,11 @@ def normalize(payload, session_snapshot=None):
 
 def main():
     try:
-        json.dump(normalize(fetch_rate_limits(), latest_session_rate_limits()), sys.stdout)
+        result = normalize(fetch_rate_limits(), latest_session_rate_limits())
+        # Which subscription these figures describe. A balancer can re-point the
+        # CLI's auth between accounts, and each account has its own windows.
+        result["account"] = active_account()
+        json.dump(result, sys.stdout)
     except (AppServerError, ValueError, OSError) as error:
         json.dump({"error": str(error)}, sys.stdout)
     return 0

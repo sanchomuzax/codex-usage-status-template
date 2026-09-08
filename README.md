@@ -106,10 +106,12 @@ conservative stop is never mistaken for a near-empty account.
 
 | field | meaning |
 |---|---|
-| `session_percent_used` | optional 5-hour window; currently usually `null` because Codex does not expose it |
-| `weekly_percent_used` | 7-day window utilization (real) |
-| `max_percent_used` | the worst of all active limits |
+| `session_percent_used` | optional 5-hour window; `null` when Codex does not expose it |
+| `weekly_percent_used` | 7-day window utilization (real), from the `codex` limit group |
+| `max_percent_used` | the worst of all active limits, across every limit group |
 | `limits[]` | every limit window, including model-scoped ones |
+| `session_group` / `weekly_group` | which limit group each headline figure came from |
+| `account` | which Codex account was authenticated when the reading was taken |
 | `session_resets_at` / `weekly_resets_at` | reset time for each exposed window; missing windows stay `null` |
 | `quota_status` | `ok` <75%, `warning` ≥75%, `critical` ≥90%, `exhausted` 100% |
 | `estimated_tokens_7d` | approximate token count from local logs |

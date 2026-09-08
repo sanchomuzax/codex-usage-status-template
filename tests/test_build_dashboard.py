@@ -55,3 +55,39 @@ def test_weekly_only_report_marks_session_unavailable() -> None:
     assert session_kpi["value"] is None
     assert session_kpi["note"] == {"type": "sessionUnavailable"}
     assert "not exposed by Codex" in module.render(payload)
+
+
+def test_the_line_breaks_where_the_active_account_changes(tmp_path) -> None:
+    """Two subscriptions are two quotas; joining them draws a cliff that is not
+    a change in consumption. The series marks the switch so the chart breaks."""
+    module = load_builder()
+    history = tmp_path / "2026-05.jsonl"
+    history.write_text(
+        "\n".join(
+            json.dumps({
+                "t": stamp,
+                "quota_status": "ok",
+                "session": 5,
+                "weekly": weekly,
+                "max": weekly,
+                "tokens_7d": 1,
+                "account": account,
+            })
+            for stamp, weekly, account in (
+                ("2026-05-04T00:00:00Z", 67, "account-a"),
+                ("2026-05-04T00:05:00Z", 67, "account-a"),
+                ("2026-05-04T00:10:00Z", 53, "account-b"),
+                ("2026-05-04T00:15:00Z", 53, "account-b"),
+            )
+        ) + "\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "report.html"
+
+    module.main([str(history), "-o", str(out)])
+    html = out.read_text(encoding="utf-8")
+    payload = html.split('<script id="data" type="application/json">', 1)[1].split("</script>", 1)[0]
+    series = json.loads(payload)["series"]
+
+    assert [point.get("b") for point in series] == [0, 0, 1, 0]
+    assert [point.get("a") for point in series] == ["account-a", "account-a", "account-b", "account-b"]

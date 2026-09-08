@@ -28,7 +28,19 @@ appear in `limits` and still drive `max_percent_used`, but never supply a
 headline figure while the `codex` group is present, because an unused group
 reports 0% and that is indistinguishable from a fresh window. `session_group`
 and `weekly_group` record which group each figure came from. Rows in `limits`
-are sorted, so the published file does not churn with the map order. Recent model responses also carry a
+are sorted, so the published file does not churn with the map order.
+
+A second identity travels with every reading: the Codex account. An account
+balancer may re-point `~/.codex/auth.json` between subscriptions, and the
+app-server authenticates as whichever one is active, so the monitor follows a
+switch on its own. The subscriptions' windows are independent, though, and a
+figure from one says nothing about the other. `active_account()` reads
+`~/.codex/current` (falling back to the `auth.json` symlink target) and the
+name is published as `account` in both `status.json` and the history samples.
+The dashboard breaks its lines where the account changes rather than drawing a
+cliff that is not a change in consumption, a switch is on its own enough reason
+to publish a reading, and `budget_check.py` discards a cached reading taken
+under a different account instead of reporting it as the current window. Recent model responses also carry a
 server-side `rate_limits` snapshot in local rollout logs. If the account method
 temporarily returns a lower value for the same duration and reset window, the
 normalizer retains the higher observed utilization. The app-server result

@@ -240,3 +240,27 @@ def test_a_session_snapshot_group_is_ranked_not_merely_appended() -> None:
     assert [row["group"] for row in result["limits"]] == ["codex", "base_model_inference"]
     assert result["weekly_percent_used"] == 12
     assert result["weekly_group"] == "codex"
+
+
+def test_active_account_reads_the_current_marker(tmp_path) -> None:
+    module = load_module("fetch_limits.py")
+    (tmp_path / "current").write_text("account-b\n", encoding="utf-8")
+
+    assert module.active_account(tmp_path) == "account-b"
+
+
+def test_active_account_falls_back_to_the_auth_symlink(tmp_path) -> None:
+    module = load_module("fetch_limits.py")
+    accounts = tmp_path / "accounts"
+    accounts.mkdir()
+    (accounts / "account-a.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "auth.json").symlink_to(accounts / "account-a.json")
+
+    assert module.active_account(tmp_path) == "account-a"
+
+
+def test_active_account_is_none_when_nothing_identifies_it(tmp_path) -> None:
+    module = load_module("fetch_limits.py")
+    (tmp_path / "auth.json").write_text("{}", encoding="utf-8")
+
+    assert module.active_account(tmp_path) is None
