@@ -20,10 +20,34 @@ def fetch_rate_limits(
 ) -> dict[str, Any]:
     """Return the raw result of ``account/rateLimits/read``.
 
+    The caller owns persistence and must not store opaque reset-credit IDs
+    unless it genuinely needs to redeem a credit.
+    """
+    return call_app_server("account/rateLimits/read", command, timeout_seconds=timeout_seconds)
+
+
+def fetch_usage(
+    command: Sequence[str] = ("codex", "app-server"), *, timeout_seconds: float = 20.0
+) -> dict[str, Any]:
+    """Return the raw result of ``account/usage/read``.
+
+    This is the server's own token accounting -- the same figures the Codex
+    ``/usage`` view shows -- so it needs no local log scanning and no guesswork.
+    """
+    return call_app_server("account/usage/read", command, timeout_seconds=timeout_seconds)
+
+
+def call_app_server(
+    method: str,
+    command: Sequence[str] = ("codex", "app-server"),
+    *,
+    timeout_seconds: float = 20.0,
+) -> dict[str, Any]:
+    """Return the result of one read-only app-server method.
+
     This starts a short-lived local Codex app-server process.  It sends no
     ``turn/start`` request, so the operation only reads account state and does
-    not invoke the model.  The caller owns persistence and must not store
-    opaque reset-credit IDs unless it genuinely needs to redeem a credit.
+    not invoke the model.
     """
 
     requests = (
@@ -34,12 +58,12 @@ def fetch_rate_limits(
                 "clientInfo": {
                     "name": "codex-usage-status",
                     "title": "Codex Usage Status",
-                    "version": "0.2.0",
+                    "version": "0.3.0",
                 }
             },
         },
         {"method": "initialized", "params": {}},
-        {"method": "account/rateLimits/read", "id": 2},
+        {"method": method, "id": 2},
     )
     payload = "".join(json.dumps(request, separators=(",", ":")) + "\n" for request in requests)
 
@@ -82,7 +106,7 @@ def fetch_rate_limits(
             result = response.get("result")
             if isinstance(result, dict):
                 return result
-            raise AppServerError("Codex app-server returned an invalid rate-limit result")
+            raise AppServerError(f"Codex app-server returned an invalid result for {method}")
     finally:
         process.stdin.close()
         if process.poll() is None:
@@ -95,7 +119,7 @@ def fetch_rate_limits(
 
     stderr = process.stderr.read().strip()
     detail = f" stderr: {stderr}" if stderr else ""
-    raise AppServerError(f"Codex app-server did not return account/rateLimits/read (exit {process.returncode}).{detail}")
+    raise AppServerError(f"Codex app-server did not return {method} (exit {process.returncode}).{detail}")
 
 
 def _find_response(output: str, *, request_id: int) -> dict[str, Any] | None:

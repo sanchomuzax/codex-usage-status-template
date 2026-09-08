@@ -114,14 +114,15 @@ conservative stop is never mistaken for a near-empty account.
 | `account` | which Codex account was authenticated when the reading was taken |
 | `session_resets_at` / `weekly_resets_at` | reset time for each exposed window; missing windows stay `null` |
 | `quota_status` | `ok` <75%, `warning` ≥75%, `critical` ≥90%, `exhausted` 100% |
-| `estimated_tokens_7d` | approximate token count from local logs |
+| `tokens_7d` / `tokens_today` | real token counts from the account's own usage method |
+| `usage_7d` | the full usage summary: lifetime, peak day, streak, longest turn |
 
 ## What the monitoring costs
 
 Nothing on the collection side, and next to nothing on the agent side.
 
-- The **cron runner** spends no tokens: `fetch_limits.py` calls the local
-  app-server account method and `estimate_tokens.py` reads local files.
+- The **cron runner** spends no tokens: `fetch_limits.py` and `fetch_usage.py`
+  both call read-only app-server account methods, which start no model turn.
 - The **agent-side check** (`budget_check.py --brief`, as instructed by
   [ORCHESTRATOR_PROMPT.md](ORCHESTRATOR_PROMPT.md)) costs one tool call plus a
   single line of output — and that is the part worth measuring, because an agent
@@ -135,11 +136,13 @@ this template deliberately ships no measurements from a maintainer session.
 ## Accuracy notes
 
 - The **percentages are authoritative** — they come from OpenAI's servers.
-- The **token counts are an approximation**. They cover only sessions logged on
-  this machine, and do not map linearly onto the percentages (different models
-  consume quota at different rates). `estimated_tokens_7d` counts plain input +
-  output; cache reads and writes are reported separately in `usage_breakdown_7d`,
-  because they are orders of magnitude larger and would distort the total.
+- The **token counts are authoritative too**, and come from the same place:
+  `account/usage/read` is the server's own accounting, the figures behind the
+  Codex `/usage` view. They do not map linearly onto the percentages, because
+  different models consume quota at different rates.
+- The seven-day window counts seven *calendar days*. The server emits a bucket
+  only for a day with usage, so counting the last seven buckets would quietly
+  reach back weeks across any break in the work.
 
 ## Files
 
@@ -148,7 +151,7 @@ this template deliberately ships no measurements from a maintainer session.
 | `codex-usage-check.sh` | the runner invoked by cron |
 | `budget_check.py` | GO/CAUTION/STOP verdict for agents ([prompt](ORCHESTRATOR_PROMPT.md)) |
 | `fetch_limits.py` | real quota fetcher |
-| `estimate_tokens.py` | 7-day token estimator |
+| `fetch_usage.py` | real token usage fetcher |
 | `status.json` | latest result (overwritten each run) |
 | `history/YYYY-MM.jsonl` | one compact line per run, for trends |
 | `history/YYYY-MM.html` | the published report for that month; rebuilt, committed & pushed each meaningful reading |
@@ -239,7 +242,7 @@ month, so it rolls over to a new file on the 1st with no configuration.
 
 ## Running on Windows
 
-The core (`budget_check.py`, `fetch_limits.py`, `estimate_tokens.py`) runs
+The core (`budget_check.py`, `fetch_limits.py`, `fetch_usage.py`) runs
 unmodified on Windows 11 with **Git Bash + Task Scheduler**. A few
 platform-specific gotchas (thanks to a user who ported it):
 

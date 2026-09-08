@@ -83,9 +83,9 @@ probe_error_detail="not needed: quota is read directly through account/rateLimit
 
 # --- 3. token estimate from local logs --------------------------------------
 
-usage_json="$("${PYTHON_BIN}" "${REPO_DIR}/estimate_tokens.py" 2>>"${LOG_FILE}")"
+usage_json="$("${PYTHON_BIN}" "${REPO_DIR}/fetch_usage.py" 2>>"${LOG_FILE}")"
 if [[ -z "${usage_json}" ]]; then
-  usage_json='{"error":"estimate_tokens.py produced no output"}'
+  usage_json='{"error":"fetch_usage.py produced no output"}'
 fi
 
 # --- 4. write status.json ---------------------------------------------------
@@ -163,15 +163,16 @@ status = {
     "probe_error_detail": os.environ["PROBE_DETAIL"],
     "probe_was_live": os.environ["PROBE_ENABLED"] == "1",
 
-    # --- approximate, from local logs ---
-    "estimated_tokens_7d": usage.get("estimated_tokens_7d"),
-    "usage_breakdown_7d": usage,
+    # --- real token accounting, from the account's own usage method ---
+    "tokens_7d": usage.get("tokens_7d"),
+    "tokens_today": usage.get("tokens_today"),
+    "usage_7d": usage,
 
     "note": (
         "Percentages are REAL, from Codex app-server account/rateLimits/read "
-        "(the same account data used by the Codex TUI). estimated_tokens_7d is a separate "
-        "approximation from local session logs on this machine only, and does "
-        "not map linearly onto the percentages. When probe_was_live is false, "
+        "(the same account data used by the Codex TUI). tokens_7d is the server's own "
+        "token accounting from account/usage/read -- the same figures the Codex /usage "
+        "view shows -- and does not map linearly onto the percentages. When probe_was_live is false, "
         "probe_status is derived from the quota figures rather than a live call. "
         "The optional 5-hour session fields remain null when Codex does not expose "
         "that window; null means unavailable, never zero."
@@ -217,12 +218,12 @@ else:
     # During active Codex work, publish every five-minute sample even when the
     # server-side quota percentage is rounded and has not moved yet. This keeps
     # the monthly HTML token graph at the same cadence as the JSONL history.
-    old_tokens = previous.get("estimated_tokens_7d")
-    new_tokens = status.get("estimated_tokens_7d")
+    old_tokens = previous.get("tokens_7d")
+    new_tokens = status.get("tokens_7d")
     if (isinstance(old_tokens, (int, float))
             and isinstance(new_tokens, (int, float))
             and new_tokens != old_tokens):
-        reasons.append(f"estimated_tokens_7d {old_tokens} -> {new_tokens}")
+        reasons.append(f"tokens_7d {old_tokens} -> {new_tokens}")
     if bool(previous.get("quota_error_detail")) != bool(status["quota_error_detail"]):
         reasons.append("quota error state changed")
     if previous.get("probe_status") != status["probe_status"]:
@@ -260,7 +261,7 @@ sample = {
     "session": status["session_percent_used"],
     "weekly": status["weekly_percent_used"],
     "max": status["max_percent_used"],
-    "tokens_7d": status["estimated_tokens_7d"],
+    "tokens_7d": status["tokens_7d"],
     "account": status["account"],
 }
 try:
@@ -305,16 +306,21 @@ w_label = f'{w}%' if isinstance(w, (int, float)) else 'unavailable'
 print(f\"{d['quota_status']} session={s_label} weekly={w_label}\")
 " 2>/dev/null || echo "update")"
 
-  git add status.json history 2>/dev/null
-  [[ -f "${month_dashboard}" ]] && git add "${month_dashboard}" 2>/dev/null
-  if [[ -z "$(git diff --cached --name-only)" ]]; then
+  # Only ever the data this run produced. A pathspec-limited add *and* commit:
+  # without it, anything a human happened to have staged in this working tree
+  # -- a half-finished edit, a `git rm` -- is swept into an automated "usage
+  # status" commit and pushed under a message that says nothing about it.
+  publish_paths=(status.json history)
+  [[ -f "${month_dashboard}" ]] && publish_paths+=("${month_dashboard}")
+  git add -- "${publish_paths[@]}" 2>/dev/null
+  if [[ -z "$(git diff --cached --name-only -- "${publish_paths[@]}")" ]]; then
     log "nothing staged despite decision: ${reason}"
   # [skip ci]: ez a commit ADAT, nem kod — nem kell hozza CI. A GitHub
   # jobonkent EGY TELJES PERCRE kerekit felfele, a windows-lab pedig ketszeresen
   # szamit, tehat egy ~20 masodperces futas ~3 szamlazott percbe kerult; ez a
   # szkript pedig otpercenkent pushol. Merve 2026-09-07: 682 szeptemberi futas,
   # ~2000 szamlazott perc — a havi 2000-es keret 90%-a EBBOL ment el.
-  elif git commit -q -m "chore: usage status $(date -u +%Y-%m-%dT%H:%MZ) (${summary}) [skip ci]" -m "${reason}"; then
+  elif git commit -q -m "chore: usage status $(date -u +%Y-%m-%dT%H:%MZ) (${summary}) [skip ci]" -m "${reason}" -- "${publish_paths[@]}"; then
     if git push -q origin HEAD 2>>"${LOG_FILE}"; then
       log "pushed: ${summary} [${reason}]"
     else

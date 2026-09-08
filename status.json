@@ -27,17 +27,20 @@
   "probe_status": "ok",
   "probe_error_detail": "not needed in this synthetic example",
   "probe_was_live": false,
-  "estimated_tokens_7d": 1000000,
-  "usage_breakdown_7d": {
+  "tokens_7d": 1000000,
+  "tokens_today": 120000,
+  "usage_7d": {
     "window_days": 7,
-    "sessions_scanned": 10,
-    "input_tokens": 350000,
-    "uncached_input_tokens": 50000,
-    "cached_input_tokens": 300000,
-    "output_tokens": 950000,
-    "reasoning_output_tokens": 75000,
-    "estimated_tokens_7d": 1000000,
-    "estimated_tokens_7d_including_cache": 1300000
+    "days_counted": 4,
+    "tokens_7d": 1000000,
+    "tokens_today": 120000,
+    "tokens_lifetime": 42000000,
+    "peak_daily_tokens": 500000,
+    "current_streak_days": 4,
+    "longest_streak_days": 9,
+    "longest_turn_seconds": 120,
+    "source": "account/usage/read",
+    "account": null
   },
   "note": "DUMMY DATA - synthetic weekly-only example, not a real measurement. The optional 5-hour session fields are intentionally null because Codex does not currently expose that window; null is not zero."
 }

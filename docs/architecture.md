@@ -46,6 +46,14 @@ temporarily returns a lower value for the same duration and reset window, the
 normalizer retains the higher observed utilization. The app-server result
 remains the primary and fallback source.
 
-The token estimate is separate and explicitly approximate. It sums final
-cumulative counters from local `~/.codex/sessions/**/*.jsonl` files for the
-rolling seven-day window; it is not used as a substitute for server quota.
+Token counts come from `account/usage/read`, a second read-only method on the
+same app-server: the server's own accounting, the figures behind the Codex
+`/usage` view. It replaced an earlier estimate that summed local
+`~/.codex/sessions/**/*.jsonl` rollout logs -- that could only see work driven
+through the Codex CLI on this machine, so once the account was driven by
+anything else it reported a figure hundreds of times too small while looking
+perfectly stable. The window is seven calendar days, not the seven most recent
+buckets: the server emits a bucket only for a day with usage, so counting
+entries would reach back weeks across a break. Token counts are not a
+substitute for the quota percentages; different models consume quota at
+different rates.
