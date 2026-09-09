@@ -54,15 +54,34 @@ def normalize_window(window, *, limit_id, slot):
     }
 
 
-def latest_session_rate_limits():
-    """Return the newest server-provided rate-limit event from Codex logs."""
-    if not SESSION_ROOT.is_dir():
+# A rollout log is only a corrective for the reading happening right now. Once
+# it is older than this it describes a window that has moved on -- and possibly
+# a different account, since the logs carry no account name and an account
+# balancer can re-point the CLI's auth underneath them.
+SESSION_SNAPSHOT_MAX_AGE_SECONDS = 30 * 60
+
+# The server's reported reset time drifts by a couple of minutes between reads,
+# so a tolerance of seconds splits one window into two.
+SAME_WINDOW_TOLERANCE_SECONDS = 10 * 60
+
+
+def latest_session_rate_limits(session_root=None):
+    """Return the newest *recent* server-provided rate-limit event from Codex logs."""
+    root = Path(session_root) if session_root is not None else SESSION_ROOT
+    if not root.is_dir():
         return None
     try:
-        paths = sorted(SESSION_ROOT.rglob("*.jsonl"), key=lambda path: path.stat().st_mtime, reverse=True)
+        paths = sorted(root.rglob("*.jsonl"), key=lambda path: path.stat().st_mtime, reverse=True)
     except OSError:
         return None
+    cutoff = datetime.now(UTC).timestamp() - SESSION_SNAPSHOT_MAX_AGE_SECONDS
     for path in paths[:20]:
+        try:
+            if path.stat().st_mtime < cutoff:
+                # Sorted newest first, so everything below this is older too.
+                return None
+        except OSError:
+            continue
         try:
             lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
@@ -153,12 +172,15 @@ def normalize(payload, session_snapshot=None):
             try:
                 left = datetime.fromisoformat(previous["resets_at"].replace("Z", "+00:00"))
                 right = datetime.fromisoformat(row["resets_at"].replace("Z", "+00:00"))
-                same_reset = abs((left - right).total_seconds()) <= 60
+                same_reset = abs((left - right).total_seconds()) <= SAME_WINDOW_TOLERANCE_SECONDS
             except ValueError:
                 pass
+        # Raise a figure only within the window both rows describe. A row for a
+        # *different* window is not a fresher reading of this one, and the
+        # account endpoint -- read live, this instant -- stays authoritative.
+        # Ranking those by "later resetsAt wins" is what let a stale rollout log
+        # pin the published weekly figure to a value from hours earlier.
         if same_reset and row["percent_used"] > previous["percent_used"]:
-            merged[key] = row
-        elif not same_reset and (row.get("resets_at") or "") > (previous.get("resets_at") or ""):
             merged[key] = row
     limits = sorted(merged.values(), key=group_sort_key)
 

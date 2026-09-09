@@ -264,3 +264,78 @@ def test_active_account_is_none_when_nothing_identifies_it(tmp_path) -> None:
     (tmp_path / "auth.json").write_text("{}", encoding="utf-8")
 
     assert module.active_account(tmp_path) is None
+
+
+def _account_payload(weekly_percent, resets_at):
+    return {"rateLimitsByLimitId": {"codex": {
+        "limitId": "codex",
+        "primary": {"usedPercent": 14, "windowDurationMins": 300, "resetsAt": 1000},
+        "secondary": {"usedPercent": weekly_percent, "windowDurationMins": 10080, "resetsAt": resets_at},
+    }}}
+
+
+def test_a_session_snapshot_never_replaces_a_different_window() -> None:
+    """A snapshot describing another window is not a fresher reading of this one.
+
+    Ranking by "later resetsAt wins" treated a stale local rollout log as newer
+    than the live account read, and pinned the published weekly figure to a
+    12-hour-old value from a different account.
+    """
+    module = load_module("fetch_limits.py")
+
+    result = module.normalize(
+        _account_payload(8, 1789448326),
+        {"limit_id": "codex",
+         "secondary": {"used_percent": 13.0, "window_minutes": 10080, "resets_at": 1789500000}},
+    )
+
+    assert result["weekly_percent_used"] == 8
+
+
+def test_the_same_window_is_recognised_despite_minutes_of_reset_drift() -> None:
+    """The server's reported reset time drifts between reads, so a tolerance of
+    seconds splits one window into two and defeats the correction entirely."""
+    module = load_module("fetch_limits.py")
+
+    result = module.normalize(
+        _account_payload(0, 1789448326),
+        {"limit_id": "codex",
+         "secondary": {"used_percent": 13.0, "window_minutes": 10080, "resets_at": 1789448488}},
+    )
+
+    assert result["weekly_percent_used"] == 13.0
+
+
+def test_a_stale_session_log_is_not_read_at_all(tmp_path) -> None:
+    import os
+    import time
+
+    module = load_module("fetch_limits.py")
+    day = tmp_path / "2026" / "09" / "08"
+    day.mkdir(parents=True)
+    log = day / "rollout-old.jsonl"
+    log.write_text(
+        '{"payload":{"rate_limits":{"limit_id":"codex","secondary":'
+        '{"used_percent":13.0,"window_minutes":10080,"resets_at":1}}}}\n',
+        encoding="utf-8",
+    )
+    old = time.time() - 12 * 3600
+    os.utime(log, (old, old))
+
+    assert module.latest_session_rate_limits(tmp_path) is None
+
+
+def test_a_fresh_session_log_is_still_read(tmp_path) -> None:
+    module = load_module("fetch_limits.py")
+    day = tmp_path / "2026" / "09" / "09"
+    day.mkdir(parents=True)
+    (day / "rollout-new.jsonl").write_text(
+        '{"payload":{"rate_limits":{"limit_id":"codex","secondary":'
+        '{"used_percent":13.0,"window_minutes":10080,"resets_at":1}}}}\n',
+        encoding="utf-8",
+    )
+
+    snapshot = module.latest_session_rate_limits(tmp_path)
+
+    assert snapshot is not None
+    assert snapshot["secondary"]["used_percent"] == 13.0
