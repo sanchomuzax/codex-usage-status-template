@@ -40,7 +40,18 @@ name is published as `account` in both `status.json` and the history samples.
 The dashboard breaks its lines where the account changes rather than drawing a
 cliff that is not a change in consumption, a switch is on its own enough reason
 to publish a reading, and `budget_check.py` discards a cached reading taken
-under a different account instead of reporting it as the current window. Recent model responses also carry a
+under a different account instead of reporting it as the current window.
+
+One consequence is easy to get backwards when reading the output. A quota
+window belongs to the *account*, not to this machine: any other machine,
+session or person signed in to the same subscription draws on the same window.
+So a figure for an account that is idle here can still move, and "not active
+locally" is not the same as "not consuming". Observed on 2026-09-09: while the
+local agent ran on one subscription, the other one's weekly figure rose from
+18% to 23% and its 5-hour window reached 34%, entirely from use elsewhere.
+Nothing in this repository should assume an idle account's numbers stand
+still -- and neither should anyone reading a flat line and concluding the
+collector has stalled. Recent model responses also carry a
 server-side `rate_limits` snapshot in local rollout logs. If the account method
 temporarily returns a lower value for the same duration and reset window, the
 normalizer retains the higher observed utilization. The app-server result
