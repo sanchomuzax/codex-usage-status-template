@@ -58,7 +58,7 @@ def call_app_server(
                 "clientInfo": {
                     "name": "codex-usage-status",
                     "title": "Codex Usage Status",
-                    "version": "0.3.3",
+                    "version": "0.4.0",
                 }
             },
         },
