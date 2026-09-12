@@ -50,7 +50,12 @@ CAUTION | HISTORY 177m old | acct hirstart | session unknown (stale) | weekly 12
 Ilyenkor három dolgot tarts szem előtt:
 
 * a **heti érték alsó becslés** — a mérés óta csak nőhetett;
-* az **5 órás ablak ismeretlen**, mert azóta akár többször is nullázódhatott;
+* az **5 órás ablakról** megkapod, mennyi volt **akkor**, de azt nem, hogy most
+  mennyi: `session was 79% 189m ago (may have reset)`. Egy ajándék reset
+  hamarabb zárja le az ablakot, mint a saját határideje, ezért a régi
+  reset-időpontból nem lehet megállapítani, hogy fordult-e azóta. Magas régi
+  érték tehát nem bizonyíték, de **figyelmeztetés**: ha nem tudod, hogy azóta
+  resetelt, ne feltételezd, hogy van kereted;
 * **zöld jelzés nincs**: régi adatból a válasz legfeljebb CAUTION, akkor is, ha
   a szám alacsony. Nagy vagy párhuzamos munkát erre hivatkozva ne indíts.
 

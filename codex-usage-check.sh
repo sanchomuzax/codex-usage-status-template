@@ -263,6 +263,12 @@ sample = {
     "max": status["max_percent_used"],
     "tokens_7d": status["tokens_7d"],
     "account": status["account"],
+    # The reset times travel with the sample so a later reader can tell which
+    # window a figure belonged to -- and, when it cannot, say so rather than
+    # assume. An early (gifted) reset closes a window before this timestamp,
+    # so a timestamp still in the future does NOT prove the window survived.
+    "session_resets_at": status["session_resets_at"],
+    "weekly_resets_at": status["weekly_resets_at"],
 }
 try:
     with open(history_path, "a", encoding="utf-8") as handle:

@@ -406,14 +406,28 @@ def main():
                            "weekly_resets_at": None},
                           source="history", age=peer_age)
         result["session_figure_stale"] = True
+        # Reported, never assumed. A gifted reset closes a window before its own
+        # deadline, so the reading's reset time -- still in the future even
+        # after such a reset -- cannot tell us whether this window survived.
+        # Three of those happened on this machine in one day. So the figure is
+        # given as what was last seen, and it moves no verdict: without it the
+        # caller learns nothing about the window that actually runs out.
+        last_session = row.get("session")
+        if isinstance(last_session, (int, float)):
+            result["last_seen_session_percent"] = last_session
         # A floor can justify stopping; it can never justify a green light.
         if result["verdict"] == "GO":
             result["verdict"] = "CAUTION"
+        seen_note = ""
+        if "last_seen_session_percent" in result:
+            seen_note = (f"; its 5-hour window was at "
+                         f"{result['last_seen_session_percent']}% then, and may have reset "
+                         "since -- an early reset cannot be told apart from none")
         result["reasons"].append(
             f"figures are {peer_age}m old, from the last reading taken under "
             f"'{wanted}' -- the monitor is signed in to "
             f"{f'{reading_account!r}' if reading_account else 'another account'} "
-            "now, so the 5-hour window is unknown and the weekly figure is a floor"
+            f"now, so the weekly figure is a floor{seen_note}"
         )
         result["source"] = "history"
         result["data_age_minutes"] = peer_age
@@ -475,6 +489,9 @@ def main():
         if "session_window_available" in result:
             if result.get("session_percent_used") is not None:
                 bits.append(f"session {result['session_percent_used']}%")
+            elif result.get("last_seen_session_percent") is not None:
+                bits.append(f"session was {result['last_seen_session_percent']}% "
+                            f"{result.get('data_age_minutes')}m ago (may have reset)")
             elif result.get("session_figure_stale"):
                 bits.append("session unknown (stale)")
             else:

@@ -281,3 +281,25 @@ def test_an_account_never_seen_is_unknown(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(sys, "argv", ["budget_check.py", "--account", "account-c", "--brief"])
 
     assert module.main() == 3
+
+
+def test_the_last_known_session_figure_is_reported_not_assumed(monkeypatch, capsys, tmp_path) -> None:
+    """A gifted reset closes a window before its own deadline, so a reset time
+    still in the future proves nothing about whether the window survived. The
+    figure is therefore reported as what was last seen, never as what holds
+    now -- and it cannot turn the verdict green either way."""
+    module = load_budget_check()
+    row = peer_row(177, "account-b", 12, session=79)
+    row["session_resets_at"] = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+    monkeypatch.setattr(module, "HISTORY_DIR", write_history(tmp_path, [row]))
+    monkeypatch.setattr(module, "load_limits", lambda: (
+        {"weekly_percent_used": 2, "account": "account-a"}, "live"))
+    monkeypatch.setattr(sys, "argv", ["budget_check.py", "--account", "account-b", "--brief"])
+
+    code = module.main()
+    output = capsys.readouterr().out
+
+    assert "79%" in output
+    assert "may have reset" in output
+    assert code == 1

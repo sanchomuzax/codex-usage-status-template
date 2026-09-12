@@ -153,9 +153,10 @@ this template deliberately ships no measurements from a maintainer session.
   `budget_check.py --account <name>`, or `CODEX_USAGE_EXPECT_ACCOUNT` -- and a
   reading for any other account falls back to the newest history sample taken
   under the account asked about -- every sample carries one -- and says how old
-  it is. The weekly figure is a floor (it only climbs within its window), the
-  5-hour figure is dropped (that window may have turned over since), and the
-  verdict is never GO. Past twelve hours, or for an account never seen, the
+  it is. The weekly figure is a floor (it only climbs within its window); the
+  5-hour figure is reported as what was last seen rather than what holds now,
+  because an early (gifted) reset closes a window before its own deadline and
+  cannot be told apart from no reset at all; and the verdict is never GO. Past twelve hours, or for an account never seen, the
   answer is UNKNOWN with no figures at all. With a single account there is
   nothing to distinguish and nothing changes.
 - **Every figure describes the account, not this machine.** Anyone else signed
