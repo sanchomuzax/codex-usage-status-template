@@ -72,3 +72,41 @@ def test_cached_reading_from_the_same_account_still_counts(monkeypatch) -> None:
     )
 
     assert result["weekly_percent_used"] == 20
+
+
+def test_the_brief_names_the_account_the_verdict_is_about(monkeypatch, capsys) -> None:
+    """A reader must never have to assume the verdict is about their own quota.
+
+    The collector reports whichever subscription ~/.codex/auth.json points at.
+    A Codex desktop app keeps its own session under ~/.config/Codex, so an agent
+    running there can be working in one subscription while this verdict
+    describes another -- silently, because the two look identical.
+    """
+    module = load_budget_check()
+    monkeypatch.setattr(module, "load_limits", lambda: ({
+        "session_percent_used": 7,
+        "weekly_percent_used": 13,
+        "weekly_resets_at": None,
+        "account": "account-b",
+    }, "live"))
+    monkeypatch.setattr(sys, "argv", ["budget_check.py", "--brief"])
+
+    module.main()
+
+    assert "account-b" in capsys.readouterr().out
+
+
+def test_an_unreported_account_is_not_invented(monkeypatch, capsys) -> None:
+    module = load_budget_check()
+    monkeypatch.setattr(module, "load_limits", lambda: ({
+        "session_percent_used": 7,
+        "weekly_percent_used": 13,
+        "weekly_resets_at": None,
+    }, "live"))
+    monkeypatch.setattr(sys, "argv", ["budget_check.py", "--brief"])
+
+    module.main()
+    output = capsys.readouterr().out
+
+    assert "acct" not in output
+    assert "weekly 13%" in output

@@ -207,6 +207,7 @@ def evaluate(limits, source="live", age=None):
             "weekly_projected_at_reset": None,
             "session_resets_in_minutes": None,
             "weekly_resets_in_minutes": None,
+            "account": reading_account,
         }
 
     fraction = elapsed_fraction(limits.get("weekly_resets_at"), WEEKLY_WINDOW)
@@ -265,6 +266,12 @@ def evaluate(limits, source="live", age=None):
         "weekly_projected_at_reset": projected,
         "session_resets_in_minutes": minutes_until(limits.get("session_resets_at")),
         "weekly_resets_in_minutes": minutes_until(limits.get("weekly_resets_at")),
+        # Which subscription these figures describe. The collector reports
+        # whichever account ~/.codex/auth.json points at, and that need not be
+        # the one the caller is working in: a Codex desktop app keeps its own
+        # session under ~/.config/Codex, and an account balancer can re-point
+        # the CLI's auth underneath it. Unnamed, the two look identical.
+        "account": limits.get("account"),
     }
 
 
@@ -334,6 +341,10 @@ def main():
             bits.append(f"CACHED{f' {age}m old' if age is not None else ''}")
         elif result.get("source") == "live":
             bits.append("live")
+        # Never let a verdict be read as being about the caller's own quota
+        # when it is about another subscription.
+        if result.get("account"):
+            bits.append(f"acct {result['account']}")
         if result.get("session_percent_used") is not None:
             bits.append(f"session {result['session_percent_used']}%")
         elif result.get("session_figure_stale"):

@@ -30,6 +30,21 @@ döntést a valóban elérhető weekly értékből és annak burn rate-jéből h
 Ha OpenAI később ismét visszaadja a 300 perces ablakot, a monitor és ez a
 policy automatikusan figyelembe veszi.
 
+### Ellenőrizd, hogy a verdikt a TE fiókodról szól-e
+
+A kimenet `acct <név>` formában megmondja, melyik előfizetésről szól. A gyűjtő
+azt a fiókot olvassa, amelyikre a `~/.codex/auth.json` épp mutat — ez nem
+feltétlenül az, amelyikben te dolgozol:
+
+* a Codex **desktop app** saját munkamenetet tart a `~/.config/Codex` alatt, és
+  azt egy fiókváltó nem írja át;
+* egy **fiókváltó** menet közben átállíthatja a CLI hitelesítését alattad.
+
+Ilyenkor a verdikt egy másik előfizetés keretéről beszél, és a kettő
+megkülönböztethetetlen, ha nem nézed meg a nevet. **Ha az `acct` nem az a fiók,
+amelyikben dolgozol, a szám nem rád vonatkozik** — akkor se GO-nak, se STOP-nak
+ne vedd, hanem kérj emberi megerősítést.
+
 ### Mindig friss adatból dolgozz
 
 A parancs **kétféle forrásból** tud dolgozni, és a válaszban mindig kiírja, melyikből:

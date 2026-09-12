@@ -143,6 +143,12 @@ this template deliberately ships no measurements from a maintainer session.
 - The seven-day window counts seven *calendar days*. The server emits a bucket
   only for a day with usage, so counting the last seven buckets would quietly
   reach back weeks across any break in the work.
+- **The reading is of whichever account `~/.codex/auth.json` points at**, which
+  is not necessarily the one you are working in. A Codex desktop app keeps its
+  own session under `~/.config/Codex` and an account balancer does not touch it,
+  so the app can be signed in to one subscription while this monitor reports
+  another. `budget_check.py` names the account in its verdict (`acct <name>`)
+  so the two cannot be confused; check it before acting on the number.
 - **Every figure describes the account, not this machine.** Anyone else signed
   in to the same subscription draws on the same windows, so the numbers can
   move while nothing runs here -- and a flat line does not prove the collector
