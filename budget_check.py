@@ -275,6 +275,49 @@ def evaluate(limits, source="live", age=None):
     }
 
 
+HISTORY_DIR = REPO_DIR / "history"
+
+# How far back a reading of another account is still worth something. A weekly
+# window is seven days, so a figure from this morning still says roughly where
+# that subscription stands; a figure from yesterday does not.
+PEER_MAX_AGE_MINUTES = 12 * 60
+
+
+def last_reading_for(account, *, history_dir=None, now=None):
+    """The newest history sample taken under `account`, and its age in minutes.
+
+    Every sample the collector writes carries the account it was read from, so
+    its own history holds real measurements of the other subscription -- from
+    whenever the CLI was last signed in to it. Older than now is not the same
+    as unknown, and saying nothing when something is known is its own kind of
+    wrong answer.
+    """
+    directory = Path(history_dir) if history_dir is not None else HISTORY_DIR
+    now = now or datetime.now(timezone.utc)
+    try:
+        paths = sorted(directory.glob("*.jsonl"), reverse=True)
+    except OSError:
+        return None, None
+
+    for path in paths[:2]:
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in reversed(lines):
+            try:
+                row = json.loads(line)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if row.get("account") != account:
+                continue
+            stamp = parse_timestamp(row.get("t"))
+            if stamp is None:
+                continue
+            return row, round((now - stamp).total_seconds() / 60)
+    return None, None
+
+
 def expected_account():
     """Which subscription the caller says it is spending, if it says.
 
@@ -298,6 +341,17 @@ def main():
     limits, source = load_limits()
     wanted = expected_account()
     reading_account = limits.get("account")
+
+    cached_peer = {}
+
+    def _peer(account):
+        """Look the account's last reading up once, not twice."""
+        if account not in cached_peer:
+            row, age = last_reading_for(account)
+            if row is not None and age is not None and age > PEER_MAX_AGE_MINUTES:
+                row = None
+            cached_peer[account] = (row, age)
+        return cached_peer[account]
 
     age = cache_age_minutes(limits) if source == "cached" else None
 
@@ -341,10 +395,35 @@ def main():
             "data_age_minutes": age,
         }
         code = 3
+    elif wanted and reading_account != wanted and _peer(wanted)[0] is not None:
+        row, peer_age = _peer(wanted)
+        # The weekly figure only ever climbs within its window, so an older
+        # reading is a floor on where that subscription stands now. The 5-hour
+        # figure is dropped: that window may have turned over since, possibly
+        # more than once, and there is no way to tell from here.
+        result = evaluate({"session_percent_used": None,
+                           "weekly_percent_used": row.get("weekly"),
+                           "weekly_resets_at": None},
+                          source="history", age=peer_age)
+        result["session_figure_stale"] = True
+        # A floor can justify stopping; it can never justify a green light.
+        if result["verdict"] == "GO":
+            result["verdict"] = "CAUTION"
+        result["reasons"].append(
+            f"figures are {peer_age}m old, from the last reading taken under "
+            f"'{wanted}' -- the monitor is signed in to "
+            f"{f'{reading_account!r}' if reading_account else 'another account'} "
+            "now, so the 5-hour window is unknown and the weekly figure is a floor"
+        )
+        result["source"] = "history"
+        result["data_age_minutes"] = peer_age
+        result["account"] = wanted
+        result["expected_account"] = wanted
+        code = {"GO": 0, "CAUTION": 1, "STOP": 2}[result["verdict"]]
     elif wanted and reading_account != wanted:
-        # Not a cautious answer about the caller's quota -- no answer about it
-        # at all. Carrying the figures along would invite them to be read as
-        # the caller's own, which is exactly the mistake being prevented.
+        # Nothing recent enough was ever measured for that account: no answer
+        # about it at all. Carrying the live figures along would invite them to
+        # be read as the caller's own, which is the mistake being prevented.
         seen = f"'{reading_account}'" if reading_account else "an unnamed account"
         result = {
             "verdict": "UNKNOWN",
@@ -381,6 +460,8 @@ def main():
         if result.get("source") == "cached":
             age = result.get("data_age_minutes")
             bits.append(f"CACHED{f' {age}m old' if age is not None else ''}")
+        elif result.get("source") == "history":
+            bits.append(f"HISTORY {result.get('data_age_minutes')}m old")
         elif result.get("source") == "live":
             bits.append("live")
         # Never let a verdict be read as being about the caller's own quota

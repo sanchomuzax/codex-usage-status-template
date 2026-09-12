@@ -40,10 +40,23 @@ python3 ~/codex-usage-status/budget_check.py --account <fiók> --brief
 
 (vagy állítsd be egyszer a `CODEX_USAGE_EXPECT_ACCOUNT` környezeti változót.)
 
-Ha a mérés nem arról a fiókról szól, a válasz **UNKNOWN**, 3-as kilépési kóddal,
-és számokat sem ad — mert a másik fiók számai semmit nem mondanak a tiédről.
-Ilyenkor ne indíts nagy munkát a monitorra hivatkozva; nézd meg a keretet ott,
-ahol az a fiók be van jelentkezve, vagy kérdezd meg a felhasználót.
+Ha a mérés épp nem arról a fiókról szól, a monitor **megkeresi az előzményeiben
+az utolsó olyan mérést, ami igen**, és abból válaszol:
+
+```
+CAUTION | HISTORY 177m old | acct hirstart | session unknown (stale) | weekly 12%
+```
+
+Ilyenkor három dolgot tarts szem előtt:
+
+* a **heti érték alsó becslés** — a mérés óta csak nőhetett;
+* az **5 órás ablak ismeretlen**, mert azóta akár többször is nullázódhatott;
+* **zöld jelzés nincs**: régi adatból a válasz legfeljebb CAUTION, akkor is, ha
+  a szám alacsony. Nagy vagy párhuzamos munkát erre hivatkozva ne indíts.
+
+Ha az adott fiókról 12 óránál régebbi mérés sincs, a válasz **UNKNOWN**, 3-as
+kilépési kóddal, számok nélkül. Akkor nézd meg a keretet ott, ahol az a fiók be
+van jelentkezve, vagy kérdezd meg a felhasználót.
 
 Ha nem adsz meg fiókot, minden marad a régiben — egyetlen fiókkal dolgozva
 nincs is mit megkülönböztetni.

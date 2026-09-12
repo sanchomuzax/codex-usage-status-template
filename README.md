@@ -151,9 +151,13 @@ this template deliberately ships no measurements from a maintainer session.
   so the two cannot be confused; check it before acting on the number. A caller
   that knows which subscription it is spending can say so --
   `budget_check.py --account <name>`, or `CODEX_USAGE_EXPECT_ACCOUNT` -- and a
-  reading for any other account is then answered with UNKNOWN and no figures,
-  rather than a confident verdict about somebody else's quota. With a single
-  account there is nothing to distinguish and nothing changes.
+  reading for any other account falls back to the newest history sample taken
+  under the account asked about -- every sample carries one -- and says how old
+  it is. The weekly figure is a floor (it only climbs within its window), the
+  5-hour figure is dropped (that window may have turned over since), and the
+  verdict is never GO. Past twelve hours, or for an account never seen, the
+  answer is UNKNOWN with no figures at all. With a single account there is
+  nothing to distinguish and nothing changes.
 - **Every figure describes the account, not this machine.** Anyone else signed
   in to the same subscription draws on the same windows, so the numbers can
   move while nothing runs here -- and a flat line does not prove the collector

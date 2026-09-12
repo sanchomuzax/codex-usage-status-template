@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -201,3 +203,81 @@ def test_a_withheld_answer_does_not_claim_the_window_was_not_exposed(monkeypatch
     module.main()
 
     assert "not exposed" not in capsys.readouterr().out
+
+
+def write_history(tmp_path, rows):
+    (tmp_path / "2026-09.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    return tmp_path
+
+
+def peer_row(minutes_ago, account, weekly, session=80):
+    stamp = (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {"t": stamp, "quota_status": "ok", "session": session, "weekly": weekly,
+            "max": max(session, weekly), "tokens_7d": 1, "account": account}
+
+
+def test_another_accounts_own_earlier_reading_is_used(monkeypatch, capsys, tmp_path) -> None:
+    """The collector labels every sample with its account, so the history holds
+    real measurements of the other subscription from whenever the CLI was last
+    signed in to it. Older than now is not the same as unknown."""
+    module = load_budget_check()
+    monkeypatch.setattr(module, "HISTORY_DIR", write_history(tmp_path, [
+        peer_row(400, "account-b", 5), peer_row(174, "account-b", 12), peer_row(4, "account-a", 2)]))
+    monkeypatch.setattr(module, "load_limits", lambda: ({
+        "session_percent_used": 12, "weekly_percent_used": 2,
+        "weekly_resets_at": None, "account": "account-a"}, "live"))
+    monkeypatch.setattr(sys, "argv", ["budget_check.py", "--account", "account-b", "--brief"])
+
+    code = module.main()
+    output = capsys.readouterr().out
+
+    assert "weekly 12%" in output          # the newest reading for that account
+    assert "acct account-b" in output
+    assert "174m" in output                # never without its age
+    assert "session" in output and "12%" not in output.split("session")[1][:12]
+    assert code == 1                       # a figure this old is not a green light
+
+
+def test_a_stale_figure_never_produces_a_green_light(monkeypatch, capsys, tmp_path) -> None:
+    module = load_budget_check()
+    monkeypatch.setattr(module, "HISTORY_DIR", write_history(tmp_path, [peer_row(120, "account-b", 1)]))
+    monkeypatch.setattr(module, "load_limits", lambda: (
+        {"weekly_percent_used": 2, "account": "account-a"}, "live"))
+    monkeypatch.setattr(sys, "argv", ["budget_check.py", "--account", "account-b", "--brief"])
+
+    assert module.main() == 1
+    assert "CAUTION" in capsys.readouterr().out
+
+
+def test_a_stale_figure_can_still_stop(monkeypatch, capsys, tmp_path) -> None:
+    """Downgrading a green light is caution; upgrading a red one would be
+    recklessness. A window that was already exhausted has not emptied since."""
+    module = load_budget_check()
+    monkeypatch.setattr(module, "HISTORY_DIR", write_history(tmp_path, [peer_row(60, "account-b", 97)]))
+    monkeypatch.setattr(module, "load_limits", lambda: (
+        {"weekly_percent_used": 2, "account": "account-a"}, "live"))
+    monkeypatch.setattr(sys, "argv", ["budget_check.py", "--account", "account-b", "--brief"])
+
+    assert module.main() == 2
+    assert "STOP" in capsys.readouterr().out
+
+
+def test_beyond_the_horizon_there_is_nothing_to_go_on(monkeypatch, tmp_path) -> None:
+    module = load_budget_check()
+    monkeypatch.setattr(module, "HISTORY_DIR", write_history(tmp_path, [peer_row(13 * 60, "account-b", 12)]))
+    monkeypatch.setattr(module, "load_limits", lambda: (
+        {"weekly_percent_used": 2, "account": "account-a"}, "live"))
+    monkeypatch.setattr(sys, "argv", ["budget_check.py", "--account", "account-b", "--brief"])
+
+    assert module.main() == 3
+
+
+def test_an_account_never_seen_is_unknown(monkeypatch, tmp_path) -> None:
+    module = load_budget_check()
+    monkeypatch.setattr(module, "HISTORY_DIR", write_history(tmp_path, [peer_row(10, "account-a", 2)]))
+    monkeypatch.setattr(module, "load_limits", lambda: (
+        {"weekly_percent_used": 2, "account": "account-a"}, "live"))
+    monkeypatch.setattr(sys, "argv", ["budget_check.py", "--account", "account-c", "--brief"])
+
+    assert module.main() == 3
