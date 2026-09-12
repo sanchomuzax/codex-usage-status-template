@@ -32,8 +32,24 @@ policy automatikusan figyelembe veszi.
 
 ### Ellenőrizd, hogy a verdikt a TE fiókodról szól-e
 
-A kimenet `acct <név>` formában megmondja, melyik előfizetésről szól. A gyűjtő
-azt a fiókot olvassa, amelyikre a `~/.codex/auth.json` épp mutat — ez nem
+**Ha tudod, melyik előfizetést költöd, add meg:**
+
+```bash
+python3 ~/codex-usage-status/budget_check.py --account <fiók> --brief
+```
+
+(vagy állítsd be egyszer a `CODEX_USAGE_EXPECT_ACCOUNT` környezeti változót.)
+
+Ha a mérés nem arról a fiókról szól, a válasz **UNKNOWN**, 3-as kilépési kóddal,
+és számokat sem ad — mert a másik fiók számai semmit nem mondanak a tiédről.
+Ilyenkor ne indíts nagy munkát a monitorra hivatkozva; nézd meg a keretet ott,
+ahol az a fiók be van jelentkezve, vagy kérdezd meg a felhasználót.
+
+Ha nem adsz meg fiókot, minden marad a régiben — egyetlen fiókkal dolgozva
+nincs is mit megkülönböztetni.
+
+A kimenet `acct <név>` formában mindig megmondja, melyik előfizetésről szól. A
+gyűjtő azt a fiókot olvassa, amelyikre a `~/.codex/auth.json` épp mutat — ez nem
 feltétlenül az, amelyikben te dolgozol:
 
 * a Codex **desktop app** saját munkamenetet tart a `~/.config/Codex` alatt, és

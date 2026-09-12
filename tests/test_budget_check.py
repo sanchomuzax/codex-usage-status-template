@@ -110,3 +110,94 @@ def test_an_unreported_account_is_not_invented(monkeypatch, capsys) -> None:
 
     assert "acct" not in output
     assert "weekly 13%" in output
+
+
+def test_a_reading_for_another_account_is_no_answer_at_all(monkeypatch, capsys) -> None:
+    """A quota figure is only valid for the account it was taken from.
+
+    The monitor reads whichever account the Codex CLI is signed in to. A caller
+    spending a different subscription -- another client with its own session, a
+    tool that re-points the CLI's auth -- would otherwise be handed a confident
+    GO about somebody else's quota. There is no general way to obtain the other
+    account's figures, so the honest answer is that there is no answer.
+    """
+    module = load_budget_check()
+    monkeypatch.setattr(module, "load_limits", lambda: ({
+        "session_percent_used": 12,
+        "weekly_percent_used": 2,
+        "weekly_resets_at": None,
+        "account": "account-a",
+    }, "live"))
+    monkeypatch.setattr(sys, "argv", ["budget_check.py", "--account", "account-b", "--brief"])
+
+    assert module.main() == 3
+    output = capsys.readouterr().out
+
+    assert "UNKNOWN" in output
+    assert "account-a" in output and "account-b" in output
+    # The figures must not travel with a verdict that does not apply to them.
+    assert "session 12%" not in output
+
+
+def test_the_expected_account_can_come_from_the_environment(monkeypatch) -> None:
+    module = load_budget_check()
+    monkeypatch.setenv("CODEX_USAGE_EXPECT_ACCOUNT", "account-b")
+    module = load_budget_check()
+    monkeypatch.setattr(module, "load_limits", lambda: ({
+        "session_percent_used": 12, "weekly_percent_used": 2,
+        "weekly_resets_at": None, "account": "account-a",
+    }, "live"))
+    monkeypatch.setattr(sys, "argv", ["budget_check.py", "--brief"])
+
+    assert module.main() == 3
+
+
+def test_a_matching_account_is_answered_normally(monkeypatch, capsys) -> None:
+    module = load_budget_check()
+    monkeypatch.setattr(module, "load_limits", lambda: ({
+        "session_percent_used": 12, "weekly_percent_used": 2,
+        "weekly_resets_at": None, "account": "account-a",
+    }, "live"))
+    monkeypatch.setattr(sys, "argv", ["budget_check.py", "--account", "account-a", "--brief"])
+
+    assert module.main() == 0
+    assert "session 12%" in capsys.readouterr().out
+
+
+def test_an_unnamed_reading_cannot_confirm_the_expected_account(monkeypatch) -> None:
+    """A reading from before the collector reported accounts cannot prove it is
+    the right one, and an unprovable match is not a match."""
+    module = load_budget_check()
+    monkeypatch.setattr(module, "load_limits", lambda: ({
+        "session_percent_used": 12, "weekly_percent_used": 2, "weekly_resets_at": None,
+    }, "live"))
+    monkeypatch.setattr(sys, "argv", ["budget_check.py", "--account", "account-a", "--brief"])
+
+    assert module.main() == 3
+
+
+def test_without_an_expected_account_nothing_changes(monkeypatch) -> None:
+    """Anyone using a single account passes no flag and sees the old behaviour."""
+    module = load_budget_check()
+    monkeypatch.setattr(module, "load_limits", lambda: ({
+        "session_percent_used": 12, "weekly_percent_used": 2,
+        "weekly_resets_at": None, "account": "account-a",
+    }, "live"))
+    monkeypatch.setattr(sys, "argv", ["budget_check.py", "--brief"])
+
+    assert module.main() == 0
+
+
+def test_a_withheld_answer_does_not_claim_the_window_was_not_exposed(monkeypatch, capsys) -> None:
+    """"not exposed" says the provider withheld the window. Declining to answer
+    about another account is a different thing and must not borrow the phrase."""
+    module = load_budget_check()
+    monkeypatch.setattr(module, "load_limits", lambda: ({
+        "session_percent_used": 12, "weekly_percent_used": 2,
+        "weekly_resets_at": None, "account": "account-a",
+    }, "live"))
+    monkeypatch.setattr(sys, "argv", ["budget_check.py", "--account", "account-b", "--brief"])
+
+    module.main()
+
+    assert "not exposed" not in capsys.readouterr().out

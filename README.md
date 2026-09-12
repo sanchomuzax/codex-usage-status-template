@@ -148,7 +148,12 @@ this template deliberately ships no measurements from a maintainer session.
   own session under `~/.config/Codex` and an account balancer does not touch it,
   so the app can be signed in to one subscription while this monitor reports
   another. `budget_check.py` names the account in its verdict (`acct <name>`)
-  so the two cannot be confused; check it before acting on the number.
+  so the two cannot be confused; check it before acting on the number. A caller
+  that knows which subscription it is spending can say so --
+  `budget_check.py --account <name>`, or `CODEX_USAGE_EXPECT_ACCOUNT` -- and a
+  reading for any other account is then answered with UNKNOWN and no figures,
+  rather than a confident verdict about somebody else's quota. With a single
+  account there is nothing to distinguish and nothing changes.
 - **Every figure describes the account, not this machine.** Anyone else signed
   in to the same subscription draws on the same windows, so the numbers can
   move while nothing runs here -- and a flat line does not prove the collector

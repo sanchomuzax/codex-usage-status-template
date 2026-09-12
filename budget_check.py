@@ -275,8 +275,29 @@ def evaluate(limits, source="live", age=None):
     }
 
 
+def expected_account():
+    """Which subscription the caller says it is spending, if it says.
+
+    A quota figure is only valid for the account it was taken from, and this
+    monitor can only read the one the Codex CLI is signed in to. Another client
+    with its own session -- or anything that re-points that auth -- leaves the
+    caller spending a different subscription than the one being reported, and
+    the two readings look identical. Naming the expectation is what makes the
+    mismatch detectable; there is no general way to obtain the other account's
+    figures, and inventing one would be worse than saying nothing.
+    """
+    argv = sys.argv
+    if "--account" in argv:
+        index = argv.index("--account") + 1
+        if index < len(argv):
+            return argv[index].strip() or None
+    return (os.environ.get("CODEX_USAGE_EXPECT_ACCOUNT") or "").strip() or None
+
+
 def main():
     limits, source = load_limits()
+    wanted = expected_account()
+    reading_account = limits.get("account")
 
     age = cache_age_minutes(limits) if source == "cached" else None
 
@@ -320,10 +341,31 @@ def main():
             "data_age_minutes": age,
         }
         code = 3
+    elif wanted and reading_account != wanted:
+        # Not a cautious answer about the caller's quota -- no answer about it
+        # at all. Carrying the figures along would invite them to be read as
+        # the caller's own, which is exactly the mistake being prevented.
+        seen = f"'{reading_account}'" if reading_account else "an unnamed account"
+        result = {
+            "verdict": "UNKNOWN",
+            "reasons": [
+                f"this reading is for {seen}, but '{wanted}' was asked about -- "
+                "separate subscriptions have separate windows, and this monitor "
+                "can only read the account the Codex CLI is signed in to; check "
+                f"'{wanted}' where it is signed in, or ask the user"
+            ],
+            "source": source,
+            "data_age_minutes": age,
+            "account": reading_account,
+            "expected_account": wanted,
+        }
+        code = 3
     else:
         result = evaluate(limits, source=source, age=age)
         result["source"] = source
         result["data_age_minutes"] = age
+        if wanted:
+            result["expected_account"] = wanted
         code = {"GO": 0, "CAUTION": 1, "STOP": 2}[result["verdict"]]
 
     result["profile"] = _PROFILE_NAME if _PROFILE_NAME in PROFILES else "balanced"
@@ -345,16 +387,21 @@ def main():
         # when it is about another subscription.
         if result.get("account"):
             bits.append(f"acct {result['account']}")
-        if result.get("session_percent_used") is not None:
-            bits.append(f"session {result['session_percent_used']}%")
-        elif result.get("session_figure_stale"):
-            bits.append("session unknown (stale)")
-        else:
-            bits.append("session — (not exposed)")
-        if result.get("weekly_percent_used") is not None:
-            bits.append(f"weekly {result['weekly_percent_used']}%")
-        if result.get("weekly_burn_rate") is not None:
-            bits.append(f"burn {result['weekly_burn_rate']}x")
+        # Figures only when a verdict was actually computed from them. A result
+        # that carries none -- an unusable reading, or one for another account
+        # -- must not report "session — (not exposed)", which says the provider
+        # withheld the window rather than that we declined to answer.
+        if "session_window_available" in result:
+            if result.get("session_percent_used") is not None:
+                bits.append(f"session {result['session_percent_used']}%")
+            elif result.get("session_figure_stale"):
+                bits.append("session unknown (stale)")
+            else:
+                bits.append("session — (not exposed)")
+            if result.get("weekly_percent_used") is not None:
+                bits.append(f"weekly {result['weekly_percent_used']}%")
+            if result.get("weekly_burn_rate") is not None:
+                bits.append(f"burn {result['weekly_burn_rate']}x")
         if result["reasons"]:
             bits.append("(" + "; ".join(result["reasons"]) + ")")
         print(" | ".join(bits))
