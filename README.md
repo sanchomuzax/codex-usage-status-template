@@ -117,6 +117,11 @@ conservative stop is never mistaken for a near-empty account.
 | `tokens_7d` / `tokens_today` | real token counts from the account's own usage method |
 | `usage_7d` | the full usage summary: lifetime, peak day, streak, longest turn |
 
+With several accounts under `~/.codex/accounts/<name>.json` (an account
+balancer's layout), every account the CLI is *not* signed in to is read as
+well, one line each in `history/peers/<YYYY-MM>.jsonl`, same fields as the main
+history. A single-account setup has no such directory and gets no peer file.
+
 ## What the monitoring costs
 
 Nothing on the collection side, and next to nothing on the agent side.

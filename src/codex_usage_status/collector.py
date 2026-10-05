@@ -7,7 +7,7 @@ import queue
 import subprocess
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 
@@ -16,25 +16,29 @@ class AppServerError(RuntimeError):
 
 
 def fetch_rate_limits(
-    command: Sequence[str] = ("codex", "app-server"), *, timeout_seconds: float = 20.0
+    command: Sequence[str] = ("codex", "app-server"), *, timeout_seconds: float = 20.0,
+    env: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Return the raw result of ``account/rateLimits/read``.
 
     The caller owns persistence and must not store opaque reset-credit IDs
     unless it genuinely needs to redeem a credit.
     """
-    return call_app_server("account/rateLimits/read", command, timeout_seconds=timeout_seconds)
+    return call_app_server("account/rateLimits/read", command,
+                           timeout_seconds=timeout_seconds, env=env)
 
 
 def fetch_usage(
-    command: Sequence[str] = ("codex", "app-server"), *, timeout_seconds: float = 20.0
+    command: Sequence[str] = ("codex", "app-server"), *, timeout_seconds: float = 20.0,
+    env: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Return the raw result of ``account/usage/read``.
 
     This is the server's own token accounting -- the same figures the Codex
     ``/usage`` view shows -- so it needs no local log scanning and no guesswork.
     """
-    return call_app_server("account/usage/read", command, timeout_seconds=timeout_seconds)
+    return call_app_server("account/usage/read", command,
+                           timeout_seconds=timeout_seconds, env=env)
 
 
 def call_app_server(
@@ -42,6 +46,7 @@ def call_app_server(
     command: Sequence[str] = ("codex", "app-server"),
     *,
     timeout_seconds: float = 20.0,
+    env: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Return the result of one read-only app-server method.
 
@@ -58,7 +63,7 @@ def call_app_server(
                 "clientInfo": {
                     "name": "codex-usage-status",
                     "title": "Codex Usage Status",
-                    "version": "0.6.0",
+                    "version": "0.7.0",
                 }
             },
         },
@@ -74,6 +79,9 @@ def call_app_server(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            # None inherits ours. A peer account is read with its own HOME, so
+            # the server finds that account's auth instead of the active one.
+            env=dict(env) if env is not None else None,
         )
     except FileNotFoundError as exc:
         raise AppServerError(f"Codex executable not found: {command[0]}") from exc

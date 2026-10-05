@@ -303,3 +303,32 @@ def test_the_last_known_session_figure_is_reported_not_assumed(monkeypatch, caps
     assert "79%" in output
     assert "may have reset" in output
     assert code == 1
+
+
+def test_a_resting_accounts_reading_comes_from_the_peers_file_when_newer(tmp_path) -> None:
+    """Since 0.7.0 the resting account is read every run into history/peers/;
+    its own last main-history line can be days old by then."""
+    module = load_budget_check()
+    write_history(tmp_path, [peer_row(400, "account-b", 93), peer_row(4, "account-a", 2)])
+    (tmp_path / "peers").mkdir()
+    (tmp_path / "peers" / "2026-09.jsonl").write_text(
+        json.dumps(peer_row(3, "account-b", 0)) + "\n", encoding="utf-8")
+
+    row, age = module.last_reading_for("account-b", history_dir=tmp_path)
+
+    assert row["weekly"] == 0
+    assert age == 3
+
+
+def test_a_failed_peer_read_does_not_hide_the_last_real_figure(tmp_path) -> None:
+    module = load_budget_check()
+    write_history(tmp_path, [peer_row(60, "account-b", 40)])
+    (tmp_path / "peers").mkdir()
+    failed = {**peer_row(2, "account-b", 0), "quota_status": "error",
+              "session": None, "weekly": None, "max": None}
+    (tmp_path / "peers" / "2026-09.jsonl").write_text(json.dumps(failed) + "\n", encoding="utf-8")
+
+    row, age = module.last_reading_for("account-b", history_dir=tmp_path)
+
+    assert row["weekly"] == 40
+    assert age == 60

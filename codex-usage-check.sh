@@ -285,6 +285,21 @@ PY
 )"
 decision_line="$(printf '%s' "${decision}" | tail -n 1)"
 
+# --- 4b. resting accounts ---------------------------------------------------
+# The reading above only sees the account the CLI is signed in to. Every other
+# account under ~/.codex/accounts/ is read separately into history/peers/, so a
+# reset pressed on a resting account is measured too. No accounts directory,
+# no peers, nothing written. Guarded: a checkout without the script still runs.
+
+if [[ -f "${REPO_DIR}/fetch_peers.py" ]]; then
+  # Bounded: a hung app-server must not stack five-minute runs behind it.
+  if peers_out="$(timeout 300 "${PYTHON_BIN}" "${REPO_DIR}/fetch_peers.py" 2>>"${LOG_FILE}")"; then
+    [[ -n "${peers_out}" ]] && log "${peers_out}"
+  else
+    log "fetch_peers.py failed (see above)"
+  fi
+fi
+
 # --- 5. commit and push -----------------------------------------------------
 # status.json and the history file are always updated locally; only meaningful
 # readings are published, so the repo history stays readable at a 5-minute cadence.

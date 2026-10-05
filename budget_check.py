@@ -294,10 +294,25 @@ def last_reading_for(account, *, history_dir=None, now=None):
     """
     directory = Path(history_dir) if history_dir is not None else HISTORY_DIR
     now = now or datetime.now(timezone.utc)
+    # Since 0.7.0 a resting account is read every run into history/peers/, so
+    # its newest figure is usually there. A failed peer read carries no figure
+    # and must not hide the last real one.
+    found = [_newest_row(directory, account, skip_errors=False),
+             _newest_row(directory / "peers", account, skip_errors=True)]
+    found = [hit for hit in found if hit is not None]
+    if not found:
+        return None, None
+    row, stamp = max(found, key=lambda hit: hit[1])
+    return row, round((now - stamp).total_seconds() / 60)
+
+
+def _newest_row(directory, account, *, skip_errors):
+    """(row, timestamp) of the newest line for `account` in the two newest
+    monthly files of `directory`, or None."""
     try:
         paths = sorted(directory.glob("*.jsonl"), reverse=True)
     except OSError:
-        return None, None
+        return None
 
     for path in paths[:2]:
         try:
@@ -309,13 +324,15 @@ def last_reading_for(account, *, history_dir=None, now=None):
                 row = json.loads(line)
             except (json.JSONDecodeError, TypeError):
                 continue
-            if row.get("account") != account:
+            if not isinstance(row, dict) or row.get("account") != account:
+                continue
+            if skip_errors and row.get("quota_status") == "error":
                 continue
             stamp = parse_timestamp(row.get("t"))
             if stamp is None:
                 continue
-            return row, round((now - stamp).total_seconds() / 60)
-    return None, None
+            return row, stamp
+    return None
 
 
 def expected_account():

@@ -51,7 +51,21 @@ local agent ran on one subscription, the other one's weekly figure rose from
 18% to 23% and its 5-hour window reached 34%, entirely from use elsewhere.
 Nothing in this repository should assume an idle account's numbers stand
 still -- and neither should anyone reading a flat line and concluding the
-collector has stalled. Recent model responses also carry a
+collector has stalled.
+
+The resting accounts are therefore read too. When `~/.codex/accounts/` holds
+more than the active account (the balancer's layout), `fetch_peers.py` reads
+each other one through its own short-lived app-server, started with an
+isolated HOME that holds a copy of that account's auth, and appends one line
+per account to `history/peers/<YYYY-MM>.jsonl` in the same shape as the main
+history. It holds the account's lock (`accounts/.<name>.lock`) for the whole
+read, and copies any token refresh the app-server made back to the account
+file -- OAuth refresh tokens are single-use. The lines go to their own file
+because the main history is one series in time order, and the HTML report
+reads an account change between neighbouring lines as a switch. Before this,
+a reset pressed on the account the balancer had just left (2026-10-05) was
+never measured: the account came back days later at 0%, indistinguishable
+from a window that had simply run out. Recent model responses also carry a
 server-side `rate_limits` snapshot in local rollout logs. If the account method
 temporarily returns a lower value for the same duration and reset window, the
 normalizer retains the higher observed utilization. The app-server result
