@@ -90,7 +90,18 @@ fi
 
 # --- 4. write status.json ---------------------------------------------------
 
+# The commit decision compares against the last PUBLISHED reading, kept in
+# .last_published.json. The local status.json is rewritten every run, so
+# comparing against it made every reading look five minutes old: the six-hour
+# heartbeat never fired and an unchanged quota was never republished. Seeded
+# from the committed status.json the first time.
+PUBLISHED_FILE="${REPO_DIR}/.last_published.json"
+if [[ ! -f "${PUBLISHED_FILE}" ]]; then
+  git -C "${REPO_DIR}" show HEAD:status.json >"${PUBLISHED_FILE}" 2>/dev/null || rm -f "${PUBLISHED_FILE}"
+fi
+
 decision="$(STATUS_JSON="${STATUS_FILE}" \
+PUBLISHED_JSON="${PUBLISHED_FILE}" \
 PROBE_STATUS="${probe_status}" \
 PROBE_DETAIL="${probe_error_detail}" \
 PROBE_ENABLED="${RUN_PROBE}" \
@@ -190,9 +201,11 @@ HEARTBEAT_HOURS = 6           # publish at least this often regardless
 status_path = os.environ["STATUS_JSON"]
 previous = None
 try:
-    with open(status_path, "r", encoding="utf-8") as handle:
+    with open(os.environ["PUBLISHED_JSON"], "r", encoding="utf-8") as handle:
         previous = json.load(handle)
 except (OSError, json.JSONDecodeError):
+    previous = None
+if not isinstance(previous, dict):
     previous = None
 
 
@@ -342,6 +355,7 @@ print(f\"{d['quota_status']} session={s_label} weekly={w_label}\")
   # szkript pedig otpercenkent pushol. Merve 2026-09-07: 682 szeptemberi futas,
   # ~2000 szamlazott perc — a havi 2000-es keret 90%-a EBBOL ment el.
   elif git commit -q -m "chore: usage status $(date -u +%Y-%m-%dT%H:%MZ) (${summary}) [skip ci]" -m "${reason}" -- "${publish_paths[@]}"; then
+    cp -- "${STATUS_FILE}" "${PUBLISHED_FILE}" 2>/dev/null || log "could not record the published reading"
     if git push -q origin HEAD 2>>"${LOG_FILE}"; then
       log "pushed: ${summary} [${reason}]"
     else

@@ -5,6 +5,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 .refresh_state
+.last_published.json
 
 # Local, one-off written analysis (not tracked). The generated HTML
 # dashboards (dashboard-*.html) ARE tracked -- they are the published report.
